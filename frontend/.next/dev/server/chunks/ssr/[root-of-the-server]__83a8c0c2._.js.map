@@ -1,6 +1,0 @@
-{
-  "version": 3,
-  "sources": [],
-  "sections": [
-    {"offset": {"line": 14, "column": 0}, "map": {"version":3,"sources":["file:///C:/Users/lenovo/Desktop/Querion/querion/frontend/app/page.tsx"],"sourcesContent":["export default function Home() { return <div>Landing Page</div> }\r\n"],"names":[],"mappings":";;;;;;AAAe,SAAS;IAAS,qBAAO,0PAAC;kBAAI;;;;;;AAAmB"}}]
-}
