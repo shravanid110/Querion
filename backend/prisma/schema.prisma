@@ -1,0 +1,19 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Connection {
+  id        String   @id @default(uuid())
+  name      String?
+  host      String
+  port      Int      @default(3306)
+  database  String
+  username  String
+  password  String   // Encrypted
+  createdAt DateTime @default(now())
+}
