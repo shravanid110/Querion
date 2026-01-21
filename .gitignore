@@ -1,18 +1,5 @@
-# dependencies
 node_modules/
-
-# env
 .env
-
-# next.js
 .next/
-out/
-
-# build
 dist/
 build/
-
-# logs
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
