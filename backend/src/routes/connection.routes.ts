@@ -70,4 +70,17 @@ router.get('/', async (req, res) => {
     }
 });
 
+// Delete Connection
+router.delete('/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        await prisma.connection.delete({
+            where: { id }
+        });
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: "Failed to delete connection" });
+    }
+});
+
 export default router;

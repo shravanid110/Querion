@@ -33,7 +33,22 @@ export const getConnections = async () => {
     return response.data;
 };
 
+export const deleteConnection = async (id: string) => {
+    const response = await api.delete(`/connections/${id}`);
+    return response.data;
+};
+
 export const runQuery = async (connectionId: string, prompt: string) => {
     const response = await api.post('/query/run', { connectionId, prompt });
     return response.data; // { sql, columns, rows, metrics, explanation }
+};
+
+export const connectUrl = async (url: string) => {
+    const response = await api.post('/url/connect', { url });
+    return response.data;
+};
+
+export const runUrlQuery = async (connectionId: string, prompt: string) => {
+    const response = await api.post('/url/query', { connectionId, prompt });
+    return response.data;
 };
