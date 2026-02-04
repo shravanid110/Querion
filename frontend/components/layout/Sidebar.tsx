@@ -1,19 +1,20 @@
 import React from 'react';
 import { cn } from '@/utils/cn';
-import { LayoutDashboard, Database, History, Settings, FileBarChart } from 'lucide-react';
+import { LayoutDashboard, Database, History, Settings, FileBarChart, Link as LinkIcon } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 const sidebarItems = [
     { icon: LayoutDashboard, label: 'Dashboard', href: '/dashboard' },
     { icon: Database, label: 'Connections', href: '/dashboard/connections' },
+    { icon: LinkIcon, label: 'Connect URL', href: '/connect' },
     { icon: History, label: 'Query History', href: '/dashboard/history' },
     { icon: FileBarChart, label: 'Saved Reports', href: '/dashboard/reports' },
 ];
 
 export const Sidebar = () => {
     // Mock active path logic since we only have /dashboard implemented for now
-    const pathname = '/dashboard';
+    const pathname = usePathname();
 
     return (
         <aside className="w-64 bg-white border-r border-gray-100 flex-shrink-0 flex flex-col h-full bg-white/80 backdrop-blur-xl fixed left-0 top-16 bottom-0 z-40 transition-all duration-300">

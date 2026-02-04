@@ -20,7 +20,7 @@ Output format:
 }
 `;
 
-export const convertNlToSql = async (schemaContext: string, userPrompt: string): Promise<{ sql: string | null; explanation: string }> => {
+export const convertNlToSql = async (schemaContext: string, userPrompt: string, customModel?: string): Promise<{ sql: string | null; explanation: string }> => {
     const apiKey = process.env.LLM_API_KEY;
     const baseURL = process.env.LLM_BASE_URL || 'https://openrouter.ai/api/v1';
 
@@ -38,20 +38,20 @@ export const convertNlToSql = async (schemaContext: string, userPrompt: string):
         };
     }
 
-    const customModel = process.env.LLM_MODEL;
     const models = customModel ? [customModel] : [
-        "google/gemini-2.0-flash-exp:free",
-        "google/gemini-flash-1.5:free",
-        "google/gemini-flash-1.5-8b:free",
-        "meta-llama/llama-3.3-70b-instruct:free",
-        "meta-llama/llama-3.1-8b-instruct:free",
-        "qwen/qwen-2.5-72b-instruct:free"
+        "google/gemma-3-27b:free",
+        "google/gemini-2.0-flash-lite-preview-02-05:free",
+        "deepseek/deepseek-r1:free",
+        "meta-llama/llama-3.1-405b-instruct:free",
+        "mistralai/mistral-small-24b-instruct-2501:free",
+        "qwen/qwen-2.5-coder-32b-instruct:free",
     ];
 
     console.log(`[SQL Gen] Prompt: "${userPrompt}"`);
     console.log(`[SQL Gen] Schema snippet: ${schemaContext.substring(0, 200)}...`);
 
-    let lastError: any = null;
+    let errorLog: string[] = [];
+
     for (const model of models) {
         try {
             console.log(`[SQL Gen] Attempting model: ${model}`);
@@ -72,13 +72,15 @@ export const convertNlToSql = async (schemaContext: string, userPrompt: string):
                         'HTTP-Referer': 'https://querion.app',
                         'X-Title': 'Querion'
                     },
-                    timeout: 20000
+                    timeout: 45000 // Increased timeout for thinking models
                 }
             );
 
             const content = response.data?.choices?.[0]?.message?.content;
             if (!content) {
-                console.warn(`[SQL Gen] Model ${model} returned empty content.`);
+                const msg = `Model ${model} returned empty content.`;
+                console.warn(`[SQL Gen] ${msg}`);
+                errorLog.push(msg);
                 continue;
             }
 
@@ -104,18 +106,22 @@ export const convertNlToSql = async (schemaContext: string, userPrompt: string):
                 throw new Error("Could not parse JSON or SQL from AI response.");
 
             } catch (e) {
-                console.warn(`Model ${model} returned invalid format, trying next...`);
+                const msg = `Model ${model} returned invalid format.`;
+                console.warn(`[SQL Gen] ${msg}`);
+                errorLog.push(msg);
                 continue;
             }
 
         } catch (error: any) {
-            lastError = error;
             const openRouterError = error.response?.data?.error?.message || error.message;
-            console.warn(`[SQL Gen] Model ${model} failed: ${openRouterError}`);
+            const msg = `Model ${model} failed: ${openRouterError}`;
+            console.warn(`[SQL Gen] ${msg}`);
+            errorLog.push(msg);
             continue;
         }
     }
 
-    const errorMsg = lastError?.response?.data?.error?.message || lastError?.message || "All models failed";
-    throw new Error(`Failed to generate SQL from AI: ${errorMsg}`);
+    const uniqueErrors = [...new Set(errorLog)];
+    const errorMsg = uniqueErrors.length > 0 ? uniqueErrors.join(" | ") : "All models failed with unknown errors.";
+    throw new Error(`Failed to generate SQL from AI. Errors: ${errorMsg}`);
 };

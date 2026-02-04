@@ -1,16 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Database, CheckCircle2, ChevronDown, Plus } from 'lucide-react';
+import { Database, CheckCircle2, ChevronDown, Plus, Trash2 } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { motion, AnimatePresence } from 'framer-motion';
-import { getConnections } from '@/services/api';
+import { getConnections, deleteConnection } from '@/services/api';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 interface Connection {
     id: string;
     name: string;
     host: string;
-    // We assume backend returns valid logic connections. Frontend status tracking is tricky without websockets,
-    // so we'll assume "connected" if it exists for now, or just show blue.
 }
 
 interface ConnectionSelectorProps {
@@ -22,6 +21,7 @@ export const ConnectionSelector = ({ onSelect }: ConnectionSelectorProps) => {
     const [connections, setConnections] = useState<Connection[]>([]);
     const [selected, setSelected] = useState<Connection | null>(null);
     const [isLoading, setIsLoading] = useState(true);
+    const router = useRouter();
 
     useEffect(() => {
         const fetchConnections = async () => {
@@ -45,6 +45,32 @@ export const ConnectionSelector = ({ onSelect }: ConnectionSelectorProps) => {
         setSelected(conn);
         onSelect(conn);
         setIsOpen(false);
+    };
+
+    const handleDelete = async (e: React.MouseEvent, id: string) => {
+        e.stopPropagation();
+        if (confirm('Are you sure you want to delete this connection?')) {
+            try {
+                await deleteConnection(id);
+                setConnections(prev => prev.filter(c => c.id !== id));
+                // If we deleted the selected one, select another or null
+                if (selected?.id === id) {
+                    const remaining = connections.filter(c => c.id !== id);
+                    if (remaining.length > 0) {
+                        setSelected(remaining[0]);
+                        onSelect(remaining[0]);
+                    } else {
+                        setSelected(null);
+                        // Force navigating back to create page if no connections left?
+                        // Just clearing state is safer for now.
+                        router.refresh();
+                    }
+                }
+            } catch (err) {
+                console.error("Failed to delete connection", err);
+                alert("Failed to delete connection.");
+            }
+        }
     };
 
     if (isLoading) return <div className="h-10 w-48 bg-gray-100 animate-pulse rounded-xl" />;
@@ -83,22 +109,31 @@ export const ConnectionSelector = ({ onSelect }: ConnectionSelectorProps) => {
                     >
                         <div className="py-1 max-h-[300px] overflow-y-auto">
                             {connections.map((conn) => (
-                                <button
+                                <div
                                     key={conn.id}
                                     onClick={() => handleSelect(conn)}
-                                    className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-0"
+                                    className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-0 cursor-pointer group/item"
                                 >
-                                    <div className="flex items-center gap-3">
-                                        <Database size={16} className="text-gray-400" />
-                                        <div className="text-left">
-                                            <p className={cn("text-sm font-medium", conn.id === selected.id ? "text-indigo-600" : "text-gray-700")}>
+                                    <div className="flex items-center gap-3 flex-1 overflow-hidden">
+                                        <Database size={16} className="text-gray-400 shrink-0" />
+                                        <div className="text-left overflow-hidden">
+                                            <p className={cn("text-sm font-medium truncate", conn.id === selected.id ? "text-indigo-600" : "text-gray-700")}>
                                                 {conn.name}
                                             </p>
-                                            <p className="text-xs text-gray-500">{conn.host}</p>
+                                            <p className="text-xs text-gray-500 truncate">{conn.host}</p>
                                         </div>
                                     </div>
-                                    {conn.id === selected.id && <CheckCircle2 size={14} className="text-green-500" />}
-                                </button>
+                                    <div className="flex items-center gap-2">
+                                        {conn.id === selected.id && <CheckCircle2 size={14} className="text-green-500" />}
+                                        <button
+                                            onClick={(e) => handleDelete(e, conn.id)}
+                                            className="text-gray-400 hover:text-red-500 p-1 rounded hover:bg-red-50 opacity-0 group-hover/item:opacity-100 transition-all"
+                                            title="Delete Connection"
+                                        >
+                                            <Trash2 size={14} />
+                                        </button>
+                                    </div>
+                                </div>
                             ))}
                         </div>
                         <div className="bg-gray-50 p-2 border-t border-gray-100 text-center">
