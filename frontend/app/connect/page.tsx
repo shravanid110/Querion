@@ -6,14 +6,16 @@ import { Navbar } from '@/components/layout/Navbar';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { connectUrl } from '@/services/api';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Link as LinkIcon, AlertCircle, Loader2, ArrowRight, CheckCircle2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { DataTable } from '@/components/dashboard/DataTable';
 
 export default function ConnectPage() {
     const router = useRouter();
-    const [url, setUrl] = useState('');
+    const searchParams = useSearchParams();
+    const initialUrl = searchParams.get('url') || '';
+    const [url, setUrl] = useState(initialUrl);
 
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
