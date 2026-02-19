@@ -1,0 +1,75 @@
+{
+    "name": "querion-monitor",
+    "displayName": "Querion Monitor",
+    "description": "Real-time AI-Powered Backend Monitoring for Querion",
+    "version": "1.0.0",
+    "publisher": "querion",
+    "engines": {
+        "vscode": "^1.90.0"
+    },
+    "categories": [
+        "Other"
+    ],
+    "activationEvents": [],
+    "main": "./out/extension.js",
+    "contributes": {
+        "viewsContainers": {
+            "activitybar": [
+                {
+                    "id": "querion-monitor",
+                    "title": "Querion",
+                    "icon": "$(pulse)"
+                }
+            ]
+        },
+        "views": {
+            "querion-monitor": [
+                {
+                    "id": "querion-monitor-view",
+                    "name": "Monitoring"
+                }
+            ]
+        },
+        "commands": [
+            {
+                "command": "querion-monitor.connect",
+                "title": "Connect to Querion"
+            }
+        ],
+        "configuration": {
+            "title": "Querion Monitor",
+            "properties": {
+                "querionMonitor.backendUrl": {
+                    "type": "string",
+                    "default": "ws://localhost:4000/ws/monitor",
+                    "description": "Querion Backend WebSocket URL"
+                },
+                "querionMonitor.jwtToken": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Secure JWT Token for authentication"
+                }
+            }
+        }
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run compile",
+        "compile": "tsc -p ./",
+        "watch": "tsc -watch -p ./",
+        "pretest": "npm run compile && npm run lint",
+        "lint": "eslint src --ext ts",
+        "test": "node ./out/test/runTest.js"
+    },
+    "devDependencies": {
+        "@types/vscode": "^1.90.0",
+        "@types/ws": "^8.5.10",
+        "@types/node": "20.x",
+        "typescript": "^5.4.5",
+        "eslint": "^8.57.0",
+        "@typescript-eslint/parser": "^7.11.0",
+        "@typescript-eslint/eslint-plugin": "^7.11.0"
+    },
+    "dependencies": {
+        "ws": "^8.17.0"
+    }
+}
