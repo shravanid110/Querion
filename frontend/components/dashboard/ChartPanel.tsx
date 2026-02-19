@@ -18,7 +18,7 @@ import {
     AreaChart as RechartsAreaChart,
     Area
 } from 'recharts';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { BarChart3, LineChart, PieChart, AreaChart as AreaChartIcon } from 'lucide-react';
 import { cn } from '@/utils/cn';
 

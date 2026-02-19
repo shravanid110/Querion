@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Send, Eraser, Sparkles, ChevronDown, ChevronUp, Code, Copy } from 'lucide-react';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/utils/cn';
 

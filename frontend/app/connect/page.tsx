@@ -3,8 +3,8 @@
 import React, { useState } from 'react';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { Navbar } from '@/components/layout/Navbar';
-import { Button } from '@/components/ui/Button';
-import { Card } from '@/components/ui/Card';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import { connectUrl } from '@/services/api';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Link as LinkIcon, AlertCircle, Loader2, ArrowRight, CheckCircle2 } from 'lucide-react';
