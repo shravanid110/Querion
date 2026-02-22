@@ -1,0 +1,20 @@
+[project]
+name = "Querion"
+description = "Intelligent Backend Monitoring & DB Assistant"
+
+[UI]
+name = "Querion"
+default_theme = "dark"
+hide_cot = true
+
+[theme]
+# Primary color (Indigo 500)
+primary_col = "#6366F1"
+# Background color (Slate 900)
+background_col = "#0F172A"
+# Card background (Slate 800)
+paper_col = "#1E293B"
+
+[features]
+# Disable default starters if we use our own action flow
+show_starters = false

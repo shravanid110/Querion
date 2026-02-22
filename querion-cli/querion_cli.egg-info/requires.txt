@@ -1,0 +1,4 @@
+click
+requests
+watchdog
+colorama

@@ -1,0 +1,48 @@
+﻿.\venv\Scripts\python.exe : 
+Traceback (most recent call last):
+At line:1 char:1
++ .\venv\Scripts\python.exe -c 
+'import chainlit; 
+print(chainlit.__versi ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSp 
+   ecified: (Traceback (most recen  
+  t call last)::String) [], Remot   
+ eException
+    + FullyQualifiedErrorId : Nativ 
+   eCommandError
+ 
+  File "<string>", line 1, in 
+<module>
+  File "C:\Users\lenovo\Desktop\Quer
+ion\querion\backend_python\venv\lib\
+site-packages\chainlit\__init__.py",
+ line 23, in <module>
+    from chainlit.cache import cache
+  File "C:\Users\lenovo\Desktop\Quer
+ion\querion\backend_python\venv\lib\
+site-packages\chainlit\cache.py", 
+line 6, in <module>
+    from chainlit.config import 
+config
+  File "C:\Users\lenovo\Desktop\Quer
+ion\querion\backend_python\venv\lib\
+site-packages\chainlit\config.py", 
+line 678, in <module>
+    config = load_config()
+  File "C:\Users\lenovo\Desktop\Quer
+ion\querion\backend_python\venv\lib\
+site-packages\chainlit\config.py", 
+line 656, in load_config
+    settings = load_settings()
+  File "C:\Users\lenovo\Desktop\Quer
+ion\querion\backend_python\venv\lib\
+site-packages\chainlit\config.py", 
+line 605, in load_settings
+    raise ValueError(
+ValueError: Your config file 'C:\Use
+rs\lenovo\Desktop\Querion\querion\ba
+ckend_python\.chainlit\config.toml' 
+is outdated. Please delete it and 
+restart the app to regenerate it.
