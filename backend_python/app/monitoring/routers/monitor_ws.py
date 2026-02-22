@@ -10,8 +10,17 @@ from app.config import settings
 logger = structlog.get_logger()
 router = APIRouter()
 
-# Global agent instance
-agent = MonitoringAgent(groq_api_key=settings.GROK_API_KEY)
+# Lazy agent — created only on first use so import never blocks startup
+_agent = None
+def get_agent() -> MonitoringAgent:
+    global _agent
+    if _agent is None:
+        try:
+            _agent = MonitoringAgent(groq_api_key=settings.GROK_API_KEY)
+        except Exception as e:
+            logger.warning("agent_init_failed", error=str(e))
+    return _agent
+
 
 # Valkey/Redis connection
 redis_client = None
@@ -68,13 +77,15 @@ async def websocket_endpoint(websocket: WebSocket):
             
             # If error detected, trigger agent
             if log.type == "error" or (log.status_code and log.status_code >= 500):
-                report = await agent.run([log])
-                await manager.broadcast_to_user(user_id, {
-                    "type": "agent_report",
-                    "content": report.content,
-                    "fix": report.suggested_fix,
-                    "severity": report.severity
-                })
+                ag = get_agent()
+                if ag:
+                    report = await ag.run([log])
+                    await manager.broadcast_to_user(user_id, {
+                        "type": "agent_report",
+                        "content": report.content,
+                        "fix": report.suggested_fix,
+                        "severity": report.severity
+                    })
 
     except WebSocketDisconnect:
         manager.disconnect(user_id, websocket)

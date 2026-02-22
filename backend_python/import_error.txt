@@ -1,0 +1,35 @@
+﻿.\venv\Scripts\python.exe : Traceback (most recent call 
+last):
+At line:1 char:1
++ .\venv\Scripts\python.exe -c 'import app.main' 2>&1 | 
+Out-File -Encod ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback (mo 
+   st recent call last)::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  File "C:\Users\lenovo\Desktop\Querion\querion\backend_pyt
+hon\app\main.py", line 72, in <module>
+    print("\u2705 Chainlit mounted at /chat")
+  File "C:\Users\lenovo\AppData\Local\Programs\Python\Pytho
+n310\lib\encodings\cp1252.py", line 19, in encode
+    return 
+codecs.charmap_encode(input,self.errors,encoding_table)[0]
+UnicodeEncodeError: 'charmap' codec can't encode character 
+'\u2705' in position 0: character maps to <undefined>
+
+During handling of the above exception, another exception 
+occurred:
+
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "C:\Users\lenovo\Desktop\Querion\querion\backend_pyt
+hon\app\main.py", line 74, in <module>
+    print(f"\u26a0\ufe0f  Chainlit not mounted: {e}")
+  File "C:\Users\lenovo\AppData\Local\Programs\Python\Pytho
+n310\lib\encodings\cp1252.py", line 19, in encode
+    return 
+codecs.charmap_encode(input,self.errors,encoding_table)[0]
+UnicodeEncodeError: 'charmap' codec can't encode 
+characters in position 0-1: character maps to <undefined>
+Γ£à Monitoring Module: Connected to Redis/Valkey
