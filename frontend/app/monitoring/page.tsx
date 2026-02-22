@@ -163,7 +163,7 @@ export default function MonitoringPage() {
     const fetchProjects = useCallback(async () => {
         try {
             const res = await axios.get(`${API}/api/monitor/projects/${USER_ID}`, {
-                timeout: 3000,
+                timeout: 8000,
             });
             setProjects(res.data);
             setBackendOnline(true);

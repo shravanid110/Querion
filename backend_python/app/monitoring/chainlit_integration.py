@@ -8,8 +8,17 @@ from app.monitoring.models import MonitorSessionLocal, UserProject, ProjectFile,
 from app.monitoring.schemas import LogMessage
 from sqlalchemy.orm import Session
 
-# Initialize Agent
-agent = MonitoringAgent(groq_api_key=settings.GROK_API_KEY)
+# Lazy agent — never instantiated at import time (avoids blocking startup)
+_agent = None
+def get_agent():
+    global _agent
+    if _agent is None:
+        try:
+            _agent = MonitoringAgent(groq_api_key=settings.GROK_API_KEY)
+        except Exception as e:
+            print(f"⚠️ Agent init failed: {e}")
+    return _agent
+
 
 def get_db():
     db = MonitorSessionLocal()
@@ -160,15 +169,19 @@ async def main(message: cl.Message):
 
             # In a real flow, we'd pass files and logs to the agent
             # For now, we use the agent's run method with logs
-            res = await agent.run(log_messages)
-            
-            # Format the output with Cyan highlights as requested
-            formatted_content = f"**Querion:** {res.content}"
-            msg.content = formatted_content
-            await msg.update()
-            
-            if res.suggested_fix:
-                await cl.Message(content=f"**Querion:** Suggested Fix:\n```python\n{res.suggested_fix}\n```").send()
+            ag = get_agent()
+            if ag:
+                res = await ag.run(log_messages)
+                # Format the output with Cyan highlights as requested
+                formatted_content = f"**Querion:** {res.content}"
+                msg.content = formatted_content
+                await msg.update()
+                
+                if res.suggested_fix:
+                    await cl.Message(content=f"**Querion:** Suggested Fix:\n```python\n{res.suggested_fix}\n```").send()
+            else:
+                msg.content = "⚠️ AI agent unavailable. Check your GROK_API_KEY in the .env file."
+                await msg.update()
         finally:
             db.close()
     else:
