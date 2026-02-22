@@ -1,0 +1,20 @@
+﻿.\venv\Scripts\python.exe :   File 
+"<string>", line 1
+At line:1 char:1
++ .\venv\Scripts\python.exe -c 
+'from chainlit.utils import 
+mount_chainl ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSp 
+   ecified: (  File "<string>", li  
+  ne 1:String) [], RemoteExceptio   
+ n
+    + FullyQualifiedErrorId : Nativ 
+   eCommandError
+ 
+    from chainlit.utils import 
+mount_chainlit; print(
+                                    
+                ^
+SyntaxError: '(' was never closed

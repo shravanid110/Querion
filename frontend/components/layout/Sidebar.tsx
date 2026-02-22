@@ -1,6 +1,6 @@
 import React from 'react';
 import { cn } from '@/utils/cn';
-import { LayoutDashboard, Database, History, Settings, FileBarChart, Link as LinkIcon } from 'lucide-react';
+import { LayoutDashboard, Database, History, Settings, FileBarChart, Link as LinkIcon, Activity } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
@@ -42,7 +42,26 @@ export const Sidebar = () => {
                 })}
             </div>
 
-            <div className="mt-auto p-6 border-t border-gray-100">
+            <div className="mt-auto p-5 border-t border-gray-100 space-y-4">
+                {/* Backend Monitoring Button */}
+                <div>
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Tools</p>
+                    <Link
+                        href="/monitoring"
+                        id="backend-monitoring-btn"
+                        className="flex items-center gap-2.5 w-full px-4 py-3 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-700 hover:to-indigo-600 active:scale-[0.98] transition-all duration-200 shadow-md shadow-indigo-200/60 group"
+                    >
+                        {/* Pulsing live indicator */}
+                        <span className="relative flex h-2.5 w-2.5 flex-shrink-0">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-cyan-300"></span>
+                        </span>
+                        <span className="flex-1">Backend Monitoring</span>
+                        <Activity className="h-3.5 w-3.5 opacity-60 group-hover:opacity-100 transition-opacity" />
+                    </Link>
+                </div>
+
+                {/* Settings link */}
                 <Link
                     href="/dashboard/settings"
                     className="flex items-center gap-3 text-sm font-medium text-gray-400 hover:text-gray-600 transition-colors"

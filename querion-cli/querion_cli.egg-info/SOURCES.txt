@@ -1,0 +1,9 @@
+setup.py
+querion_cli/__init__.py
+querion_cli/main.py
+querion_cli.egg-info/PKG-INFO
+querion_cli.egg-info/SOURCES.txt
+querion_cli.egg-info/dependency_links.txt
+querion_cli.egg-info/entry_points.txt
+querion_cli.egg-info/requires.txt
+querion_cli.egg-info/top_level.txt

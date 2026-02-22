@@ -1,0 +1,2 @@
+[console_scripts]
+querion = querion_cli.main:main

@@ -1,0 +1,12 @@
+fastapi==0.115.0
+uvicorn==0.30.1
+sqlalchemy==2.0.31
+pydantic==2.7.4
+python-dotenv==1.0.1
+requests==2.32.3
+aiosqlite==0.20.0
+chainlit>=2.9.4
+dash>=2.17.0
+pandas>=2.2.0
+watchdog>=4.0.0
+colorama>=0.4.6
