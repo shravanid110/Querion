@@ -9,7 +9,7 @@ class UserProject(Base):
     __tablename__ = "users_projects"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(String(255), nullable=False)
+    user_id = Column(String(255), nullable=False, index=True)
     project_name = Column(String(255), nullable=False)
     last_updated = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
     

@@ -18,6 +18,13 @@ import {
     WifiOff,
     Clock,
     Layers,
+    Mic,
+    MicOff,
+    Globe,
+    CheckCircle,
+    AlertCircle,
+    Loader2,
+    Volume2,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -34,6 +41,7 @@ interface ChatMessage {
     role: "user" | "assistant";
     content: string;
     ts: string;
+    voiceMeta?: { detected_language: string; original_text: string };
 }
 
 interface LogLine {
@@ -66,6 +74,159 @@ function fmtTime(iso: string) {
     } catch {
         return iso;
     }
+}
+
+// ─── Markdown renderer (no external dep) ──────────────────────────────────────
+
+function MarkdownRenderer({ content }: { content: string }) {
+    const lines = content.split("\n");
+    const elements: React.ReactNode[] = [];
+    let i = 0;
+
+    while (i < lines.length) {
+        const line = lines[i];
+
+        // Code block
+        if (line.startsWith("```")) {
+            const lang = line.slice(3).trim();
+            const codeLines: string[] = [];
+            i++;
+            while (i < lines.length && !lines[i].startsWith("```")) {
+                codeLines.push(lines[i]);
+                i++;
+            }
+            elements.push(
+                <div key={i} className="my-3 rounded-xl overflow-hidden border border-slate-700">
+                    {lang && (
+                        <div className="bg-slate-800 px-3 py-1 text-xs text-cyan-400 font-mono border-b border-slate-700">
+                            {lang}
+                        </div>
+                    )}
+                    <pre className="bg-slate-950 p-4 text-xs font-mono text-emerald-300 overflow-x-auto leading-relaxed">
+                        {codeLines.join("\n")}
+                    </pre>
+                </div>
+            );
+            i++;
+            continue;
+        }
+
+        // Heading 3
+        if (line.startsWith("### ")) {
+            elements.push(
+                <h3 key={i} className="text-sm font-bold text-cyan-300 mt-4 mb-1">
+                    {line.slice(4)}
+                </h3>
+            );
+            i++;
+            continue;
+        }
+
+        // Heading 2
+        if (line.startsWith("## ")) {
+            elements.push(
+                <h2 key={i} className="text-base font-bold text-indigo-300 mt-4 mb-1">
+                    {line.slice(3)}
+                </h2>
+            );
+            i++;
+            continue;
+        }
+
+        // Heading 1
+        if (line.startsWith("# ")) {
+            elements.push(
+                <h1 key={i} className="text-lg font-bold text-white mt-4 mb-2">
+                    {line.slice(2)}
+                </h1>
+            );
+            i++;
+            continue;
+        }
+
+        // Bullet
+        if (line.match(/^(\s*)[-*•]\s/)) {
+            elements.push(
+                <div key={i} className="flex gap-2 items-start my-0.5">
+                    <span className="text-indigo-400 mt-0.5 flex-shrink-0">•</span>
+                    <span className="text-slate-300 text-sm">{inlineFormat(line.replace(/^(\s*)[-*•]\s/, ""))}</span>
+                </div>
+            );
+            i++;
+            continue;
+        }
+
+        // Numbered list
+        if (line.match(/^\d+\.\s/)) {
+            const num = line.match(/^(\d+)\./)?.[1];
+            elements.push(
+                <div key={i} className="flex gap-2 items-start my-0.5">
+                    <span className="text-indigo-400 font-bold text-sm flex-shrink-0 w-5">{num}.</span>
+                    <span className="text-slate-300 text-sm">{inlineFormat(line.replace(/^\d+\.\s/, ""))}</span>
+                </div>
+            );
+            i++;
+            continue;
+        }
+
+        // Horizontal rule
+        if (line.match(/^---+$/)) {
+            elements.push(<hr key={i} className="border-slate-700 my-3" />);
+            i++;
+            continue;
+        }
+
+        // Empty line
+        if (line.trim() === "") {
+            elements.push(<div key={i} className="h-2" />);
+            i++;
+            continue;
+        }
+
+        // Paragraph
+        elements.push(
+            <p key={i} className="text-slate-300 text-sm leading-relaxed">
+                {inlineFormat(line)}
+            </p>
+        );
+        i++;
+    }
+
+    return <div className="space-y-0.5">{elements}</div>;
+}
+
+function inlineFormat(text: string): React.ReactNode {
+    // Bold + code inline
+    const parts: React.ReactNode[] = [];
+    const regex = /(`[^`]+`|\*\*[^*]+\*\*)/g;
+    let last = 0;
+    let match: RegExpExecArray | null;
+    let key = 0;
+
+    while ((match = regex.exec(text)) !== null) {
+        if (match.index > last) {
+            parts.push(<span key={key++}>{text.slice(last, match.index)}</span>);
+        }
+        const token = match[0];
+        if (token.startsWith("`")) {
+            parts.push(
+                <code key={key++} className="bg-slate-800 text-cyan-300 px-1 rounded text-xs font-mono">
+                    {token.slice(1, -1)}
+                </code>
+            );
+        } else {
+            parts.push(
+                <strong key={key++} className="text-white font-semibold">
+                    {token.slice(2, -2)}
+                </strong>
+            );
+        }
+        last = match.index + token.length;
+    }
+    if (last < text.length) {
+        parts.push(<span key={key++}>{text.slice(last)}</span>);
+    }
+    return <>{parts}</>;
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -139,6 +300,38 @@ function ProjectCard({
     );
 }
 
+// ─── Voice Status Badge ────────────────────────────────────────────────────────
+function VoiceBadge({ lang, status }: { lang?: string; status: "idle" | "recording" | "processing" | "done" | "error" }) {
+    if (status === "idle") return null;
+    if (status === "recording") return (
+        <div className="flex items-center gap-1.5 text-xs bg-red-500/20 text-red-400 border border-red-500/30 rounded-full px-3 py-1 animate-pulse">
+            <span className="h-2 w-2 bg-red-400 rounded-full" />
+            Recording…
+        </div>
+    );
+    if (status === "processing") return (
+        <div className="flex items-center gap-1.5 text-xs bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-full px-3 py-1">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            Transcribing…
+        </div>
+    );
+    if (status === "done") return (
+        <div className="flex items-center gap-1.5 text-xs bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-full px-3 py-1">
+            <CheckCircle className="h-3 w-3" />
+            <Globe className="h-3 w-3" />
+            {lang && <span>{lang.toUpperCase()}</span>}
+            → EN
+        </div>
+    );
+    if (status === "error") return (
+        <div className="flex items-center gap-1.5 text-xs bg-red-500/20 text-red-400 border border-red-500/30 rounded-full px-3 py-1">
+            <AlertCircle className="h-3 w-3" />
+            Voice error
+        </div>
+    );
+    return null;
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function MonitoringPage() {
@@ -146,14 +339,36 @@ export default function MonitoringPage() {
     const [selectedProject, setSelectedProject] = useState<Project | null>(null);
     const [activeTab, setActiveTab] = useState<"chat" | "logs" | "files">("chat");
     const [logs, setLogs] = useState<LogLine[]>([]);
-    const [files, setFiles] = useState<{ file_path: string; content: string }[]>([]);
+    const [files, setFiles] = useState<{ file_path: string }[]>([]);
     const [selectedFile, setSelectedFile] = useState<string | null>(null);
+    const [selectedFileContent, setSelectedFileContent] = useState<string>("");
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [input, setInput] = useState("");
     const [sending, setSending] = useState(false);
     const [loadingProjects, setLoadingProjects] = useState(true);
     const [backendOnline, setBackendOnline] = useState(false);
+    const [selectedLanguage, setSelectedLanguage] = useState("auto"); // Default to auto-detect
+
+    const LANGUAGES = [
+        { code: "auto", name: "🌍 Auto-detect" },
+        { code: "en", name: "🇺🇸 English" },
+        { code: "mr", name: "🇮🇳 Marathi" },
+        { code: "hi", name: "🇮🇳 Hindi" },
+        { code: "es", name: "🇪🇸 Spanish" },
+        { code: "fr", name: "🇫🇷 French" },
+        { code: "de", name: "🇩🇪 German" },
+        { code: "ja", name: "🇯🇵 Japanese" },
+        { code: "zh", name: "🇨🇳 Chinese" },
+    ];
+
     const [projectError, setProjectError] = useState<string | null>(null);
+
+    // ── Voice state ─────────────────────────────────────────────────────────
+    const [voiceStatus, setVoiceStatus] = useState<"idle" | "recording" | "processing" | "done" | "error">("idle");
+    const [voiceLang, setVoiceLang] = useState<string>("");
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    const audioChunksRef = useRef<Blob[]>([]);
+    const isRecordingRef = useRef(false);
 
     const logsEndRef = useRef<HTMLDivElement>(null);
     const chatEndRef = useRef<HTMLDivElement>(null);
@@ -178,7 +393,7 @@ export default function MonitoringPage() {
 
     useEffect(() => {
         fetchProjects();
-        const interval = setInterval(fetchProjects, 5000);
+        const interval = setInterval(fetchProjects, 10000); // Poll every 10s
         return () => clearInterval(interval);
     }, [fetchProjects]);
 
@@ -199,11 +414,30 @@ export default function MonitoringPage() {
     useEffect(() => {
         if (!selectedProject) return;
         fetchProjectDetail(selectedProject);
-        pollRef.current = setInterval(() => fetchProjectDetail(selectedProject), 2000);
+        pollRef.current = setInterval(() => fetchProjectDetail(selectedProject), 5000); // Poll logs/filelist every 5s
         return () => {
             if (pollRef.current) clearInterval(pollRef.current);
         };
     }, [selectedProject, fetchProjectDetail]);
+
+    // Fetch file content when selection changes
+    useEffect(() => {
+        if (!selectedProject || !selectedFile) {
+            setSelectedFileContent("");
+            return;
+        }
+        const fetchContent = async () => {
+            try {
+                const res = await axios.get(`${API}/api/monitor/file-content/${selectedProject.id}`, {
+                    params: { path: selectedFile }
+                });
+                setSelectedFileContent(res.data.content || "Empty file");
+            } catch (e) {
+                setSelectedFileContent("Error loading file content.");
+            }
+        };
+        fetchContent();
+    }, [selectedProject, selectedFile]);
 
     // ── Auto-scroll ─────────────────────────────────────────────────────────────
     useEffect(() => {
@@ -214,12 +448,22 @@ export default function MonitoringPage() {
         chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages]);
 
+    const speakText = (text: string) => {
+        if (!window.speechSynthesis) return;
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 1.0;
+        utterance.pitch = 1.0;
+        window.speechSynthesis.speak(utterance);
+    };
+
     // ── Send chat message ───────────────────────────────────────────────────────
-    const sendMessage = async () => {
-        if (!input.trim() || !selectedProject || sending) return;
+    const sendMessage = async (overrideInput?: string) => {
+        const text = (overrideInput ?? input).trim();
+        if (!text || !selectedProject || sending) return;
         const userMsg: ChatMessage = {
             role: "user",
-            content: input.trim(),
+            content: text,
             ts: new Date().toISOString(),
         };
         setMessages((prev) => [...prev, userMsg]);
@@ -232,9 +476,9 @@ export default function MonitoringPage() {
                 {
                     user_id: USER_ID,
                     project_name: selectedProject.name,
-                    message: userMsg.content,
+                    message: text,
                 },
-                { timeout: 30000 }
+                { timeout: 60000 }
             );
             const botMsg: ChatMessage = {
                 role: "assistant",
@@ -254,6 +498,99 @@ export default function MonitoringPage() {
             ]);
         } finally {
             setSending(false);
+        }
+    };
+
+    // ── Voice recording ─────────────────────────────────────────────────────────
+    const startRecording = async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            audioChunksRef.current = [];
+            isRecordingRef.current = true;
+
+            // Prefer webm for broad browser support
+            const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+                ? "audio/webm;codecs=opus"
+                : MediaRecorder.isTypeSupported("audio/webm")
+                    ? "audio/webm"
+                    : "audio/ogg";
+
+            const mr = new MediaRecorder(stream, { mimeType });
+            mediaRecorderRef.current = mr;
+
+            mr.ondataavailable = (e) => {
+                if (e.data.size > 0) audioChunksRef.current.push(e.data);
+            };
+
+            mr.onstop = async () => {
+                stream.getTracks().forEach((t) => t.stop());
+                if (!isRecordingRef.current) return; // cancelled
+
+                const blob = new Blob(audioChunksRef.current, { type: mimeType });
+                if (blob.size === 0) {
+                    setVoiceStatus("error");
+                    setTimeout(() => setVoiceStatus("idle"), 3000);
+                    return;
+                }
+
+                setVoiceStatus("processing");
+
+                try {
+                    const formData = new FormData();
+                    const ext = mimeType.includes("ogg") ? ".ogg" : ".webm";
+                    formData.append("file", blob, `voice${ext}`);
+                    formData.append("language", selectedLanguage);
+
+                    const res = await axios.post(`${API}/api/voice-input`, formData, {
+                        headers: { "Content-Type": "multipart/form-data" },
+                        timeout: 120000,
+                    });
+
+                    const { detected_language, english_text, original_text } = res.data;
+                    setVoiceLang(detected_language || "");
+                    setVoiceStatus("done");
+                    setInput(english_text || "");
+
+                    // Add voice indicator note if translated
+                    if (detected_language && detected_language.toLowerCase() !== "en") {
+                        setMessages((prev) => [
+                            ...prev,
+                            {
+                                role: "assistant" as const,
+                                content: `🎤 **Voice detected** — Language: \`${detected_language.toUpperCase()}\`\n\n> Original: *${original_text}*\n\n✅ Translated to English and ready to send.`,
+                                ts: new Date().toISOString(),
+                            },
+                        ]);
+                    }
+
+                    setTimeout(() => setVoiceStatus("idle"), 4000);
+                } catch (err: any) {
+                    console.error("Voice transcription error:", err);
+                    setVoiceStatus("error");
+                    setTimeout(() => setVoiceStatus("idle"), 4000);
+                }
+            };
+
+            mr.start(250); // collect data every 250ms
+            setVoiceStatus("recording");
+        } catch (err: any) {
+            console.error("Microphone error:", err);
+            setVoiceStatus("error");
+            setTimeout(() => setVoiceStatus("idle"), 3000);
+        }
+    };
+
+    const stopRecording = () => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+            mediaRecorderRef.current.stop();
+        }
+    };
+
+    const toggleRecording = () => {
+        if (voiceStatus === "recording") {
+            stopRecording();
+        } else if (voiceStatus === "idle") {
+            startRecording();
         }
     };
 
@@ -416,7 +753,7 @@ export default function MonitoringPage() {
                                 </p>
                             ) : (
                                 files.map((f) => {
-                                    const filename = f.file_path.split(/[\\/]/).pop() || f.file_path;
+                                    const filename = f.file_path.split(/[\\\/]/).pop() || f.file_path;
                                     const isSelected = selectedFile === f.file_path;
                                     return (
                                         <button
@@ -488,9 +825,14 @@ export default function MonitoringPage() {
                                             <p className="text-lg font-semibold text-slate-500 mb-2">
                                                 Ask anything about {selectedProject.name}
                                             </p>
-                                            <p className="text-sm max-w-sm">
-                                                Examples: "Explain my login flow", "Why is this endpoint slow?", "What does my middleware do?"
+                                            <p className="text-sm max-w-sm text-slate-600">
+                                                Examples: "Explain my login flow", "Why is this endpoint
+                                                slow?", "What does my middleware do?"
                                             </p>
+                                            <div className="mt-4 flex items-center gap-2 text-slate-600 text-xs">
+                                                <Mic className="h-4 w-4 text-indigo-500" />
+                                                <span>Or tap the mic button to speak in any language — it auto-translates to English</span>
+                                            </div>
                                             <div className="mt-6 flex flex-wrap gap-2 justify-center">
                                                 {[
                                                     "Explain my login flow",
@@ -515,31 +857,64 @@ export default function MonitoringPage() {
                                             className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
                                         >
                                             <div
-                                                className={`max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${m.role === "user"
+                                                className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${m.role === "user"
                                                     ? "bg-indigo-600 text-white"
-                                                    : "bg-slate-800 text-slate-200"
+                                                    : "bg-slate-800/90 border border-slate-700/60"
                                                     }`}
                                             >
                                                 {m.role === "assistant" && (
-                                                    <p className="text-cyan-400 font-bold text-xs mb-1">
-                                                        Querion:
-                                                    </p>
+                                                    <div className="flex items-center gap-2 mb-2">
+                                                        <div className="w-5 h-5 rounded-full bg-indigo-600/30 flex items-center justify-center">
+                                                            <Cpu className="h-3 w-3 text-indigo-400" />
+                                                        </div>
+                                                        <p className="text-cyan-400 font-bold text-xs uppercase tracking-wider">Querion AI</p>
+                                                    </div>
                                                 )}
-                                                <p className="whitespace-pre-wrap">{m.content}</p>
-                                                <p className="text-xs opacity-40 mt-1 text-right">
-                                                    {fmtTime(m.ts)}
-                                                </p>
+                                                {m.role === "assistant" ? (
+                                                    <MarkdownRenderer content={m.content} />
+                                                ) : (
+                                                    <p className="whitespace-pre-wrap">{m.content}</p>
+                                                )}
+                                                <div className="flex items-center justify-between gap-3 mt-3 pt-2 border-t border-slate-700/30">
+                                                    <div className="flex items-center gap-2">
+                                                        {m.role === "assistant" && (
+                                                            <button
+                                                                onClick={() => speakText(m.content)}
+                                                                className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 hover:text-indigo-300 transition-all border border-indigo-500/20 group"
+                                                                title="Listen to response"
+                                                            >
+                                                                <Volume2 className="h-3.5 w-3.5" />
+                                                                <span className="text-[10px] font-semibold uppercase tracking-wider">Listen</span>
+                                                            </button>
+                                                        )}
+                                                        {m.role === "assistant" && (
+                                                            <button
+                                                                onClick={() => window.speechSynthesis.cancel()}
+                                                                className="p-1.5 rounded-lg hover:bg-slate-700 text-slate-500 hover:text-slate-300 transition-colors"
+                                                                title="Stop reading"
+                                                            >
+                                                                <div className="w-2.5 h-2.5 bg-current rounded-sm" />
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                    <p className="text-[10px] opacity-40 font-mono tracking-tight">{fmtTime(m.ts)}</p>
+                                                </div>
                                             </div>
                                         </div>
                                     ))}
                                     {sending && (
                                         <div className="flex justify-start">
-                                            <div className="bg-slate-800 rounded-2xl px-4 py-3 text-sm">
-                                                <p className="text-cyan-400 font-bold text-xs mb-1">Querion:</p>
+                                            <div className="bg-slate-800 border border-slate-700/60 rounded-2xl px-4 py-3 text-sm">
+                                                <div className="flex items-center gap-2 mb-2">
+                                                    <div className="w-5 h-5 rounded-full bg-indigo-600/30 flex items-center justify-center">
+                                                        <Cpu className="h-3 w-3 text-indigo-400" />
+                                                    </div>
+                                                    <p className="text-cyan-400 font-bold text-xs">Querion AI</p>
+                                                </div>
                                                 <div className="flex gap-1 items-center py-1">
-                                                    <span className="h-2 w-2 bg-slate-500 rounded-full animate-bounce [animation-delay:-0.3s]" />
-                                                    <span className="h-2 w-2 bg-slate-500 rounded-full animate-bounce [animation-delay:-0.15s]" />
-                                                    <span className="h-2 w-2 bg-slate-500 rounded-full animate-bounce" />
+                                                    <span className="h-2 w-2 bg-indigo-400 rounded-full animate-bounce [animation-delay:-0.3s]" />
+                                                    <span className="h-2 w-2 bg-indigo-400 rounded-full animate-bounce [animation-delay:-0.15s]" />
+                                                    <span className="h-2 w-2 bg-indigo-400 rounded-full animate-bounce" />
                                                 </div>
                                             </div>
                                         </div>
@@ -547,10 +922,55 @@ export default function MonitoringPage() {
                                     <div ref={chatEndRef} />
                                 </div>
 
-                                {/* Input */}
+                                {/* ── Input Area with Mic ── */}
                                 <div className="p-4 border-t border-slate-800 bg-slate-900">
-                                    <div className="flex gap-3 items-end">
+                                    {/* Voice status badge */}
+                                    {voiceStatus !== "idle" && (
+                                        <div className="flex justify-center mb-2">
+                                            <VoiceBadge lang={voiceLang} status={voiceStatus} />
+                                        </div>
+                                    )}
+
+                                    <div className="flex gap-2 items-end">
+                                        {/* Mic button and Language selector */}
+                                        <div className="flex flex-col gap-1.5 flex-shrink-0">
+                                            <select
+                                                value={selectedLanguage}
+                                                onChange={(e) => setSelectedLanguage(e.target.value)}
+                                                className="bg-slate-800 border border-slate-700 text-[10px] text-slate-300 rounded-lg px-2 py-1 outline-none focus:border-indigo-500 transition-colors cursor-pointer"
+                                                title="Speaking language hint"
+                                            >
+                                                {LANGUAGES.map((l) => (
+                                                    <option key={l.code} value={l.code}>
+                                                        {l.name}
+                                                    </option>
+                                                ))}
+                                            </select>
+
+                                            <button
+                                                id="voice-mic-btn"
+                                                onClick={toggleRecording}
+                                                disabled={voiceStatus === "processing"}
+                                                title={voiceStatus === "recording" ? "Stop recording" : "Start voice input"}
+                                                className={`p-3 rounded-xl flex-shrink-0 transition-all duration-200 ${voiceStatus === "recording"
+                                                    ? "bg-red-500 hover:bg-red-600 text-white animate-pulse ring-2 ring-red-400/50"
+                                                    : voiceStatus === "processing"
+                                                        ? "bg-amber-500/20 text-amber-400 cursor-wait"
+                                                        : "bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-indigo-400 border border-slate-700 hover:border-indigo-500"
+                                                    }`}
+                                            >
+                                                {voiceStatus === "recording" ? (
+                                                    <MicOff className="h-4 w-4" />
+                                                ) : voiceStatus === "processing" ? (
+                                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                                ) : (
+                                                    <Mic className="h-4 w-4" />
+                                                )}
+                                            </button>
+                                        </div>
+
                                         <textarea
+                                            id="chat-input"
                                             rows={2}
                                             value={input}
                                             onChange={(e) => setInput(e.target.value)}
@@ -560,17 +980,26 @@ export default function MonitoringPage() {
                                                     sendMessage();
                                                 }
                                             }}
-                                            placeholder={`Ask about ${selectedProject.name}... (Enter to send)`}
+                                            placeholder={
+                                                voiceStatus === "recording"
+                                                    ? "🔴 Listening… click mic to stop"
+                                                    : `Ask about ${selectedProject.name}… (Enter to send, or 🎤 for voice)`
+                                            }
                                             className="flex-1 bg-slate-800 border border-slate-700 focus:border-indigo-500 rounded-xl px-4 py-3 text-sm text-slate-200 placeholder-slate-600 resize-none outline-none transition-colors"
                                         />
                                         <button
-                                            onClick={sendMessage}
+                                            id="chat-send-btn"
+                                            onClick={() => sendMessage()}
                                             disabled={sending || !input.trim()}
                                             className="p-3.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl text-white transition-colors flex-shrink-0"
                                         >
                                             <Send className="h-4 w-4" />
                                         </button>
                                     </div>
+
+                                    <p className="text-xs text-slate-700 mt-2 text-center">
+                                        🎤 Voice supports 100+ languages · auto-translates to English · powered by Whisper
+                                    </p>
                                 </div>
                             </div>
                         )}
@@ -620,7 +1049,7 @@ export default function MonitoringPage() {
                                         <p className="px-4 py-3 text-xs text-slate-600 italic">No files synced yet.</p>
                                     ) : (
                                         files.map((f) => {
-                                            const filename = f.file_path.split(/[\\/]/).pop() || f.file_path;
+                                            const filename = f.file_path.split(/[\\\/]/).pop() || f.file_path;
                                             const isSelected = selectedFile === f.file_path;
                                             return (
                                                 <button
@@ -644,8 +1073,7 @@ export default function MonitoringPage() {
                                         <>
                                             <p className="text-xs text-slate-600 mb-3 font-mono">{selectedFile}</p>
                                             <pre className="text-xs text-slate-300 font-mono whitespace-pre-wrap leading-relaxed">
-                                                {files.find((f) => f.file_path === selectedFile)?.content ||
-                                                    "Empty file"}
+                                                {selectedFileContent || "Loading..."}
                                             </pre>
                                         </>
                                     ) : (

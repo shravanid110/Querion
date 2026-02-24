@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     LLM_API_KEY: str = ""
     OPENROUTER_API_KEY: str = ""
     GROK_API_KEY: str = ""
+    VOICE_API_KEY: str = ""
     LLM_BASE_URL: str = "https://openrouter.ai/api/v1"
 
     class Config:
