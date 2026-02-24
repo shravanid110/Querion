@@ -1,13 +1,20 @@
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
+import logging
+import httpx
+import re as _re
+import json
+from datetime import datetime
 from typing import List, Optional
 from pydantic import BaseModel
-from datetime import datetime
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
 from ..models import get_monitor_db, UserProject, ProjectFile, ProjectLog
 from ..agents.monitoring_agent import MonitoringAgent
 from app.config import settings
-from app.monitoring.schemas import LogMessage
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -88,15 +95,20 @@ async def sync_monitor_data(req: SyncRequest, db: Session = Depends(get_monitor_
 
 @router.get("/projects/{user_id}")
 async def get_user_projects(user_id: str, db: Session = Depends(get_monitor_db)):
-    """List all projects for a user."""
+    """List all projects for a user optimized for speed."""
     projects = db.query(UserProject).filter(UserProject.user_id == user_id).all()
-    return [{
-        "id": p.id,
-        "name": p.project_name,
-        "last_updated": p.last_updated,
-        "file_count": len(p.files),
-        "log_count": len(p.logs)
-    } for p in projects]
+    results = []
+    for p in projects:
+        file_count = db.query(ProjectFile).filter(ProjectFile.project_id == p.id).count()
+        log_count = db.query(ProjectLog).filter(ProjectLog.project_id == p.id).count()
+        results.append({
+            "id": p.id,
+            "name": p.project_name,
+            "last_updated": p.last_updated,
+            "file_count": file_count,
+            "log_count": log_count
+        })
+    return results
 
 
 @router.get("/logs/{project_id}")
@@ -114,17 +126,29 @@ async def get_project_logs(project_id: int, limit: int = 200, db: Session = Depe
 
 @router.get("/files/{project_id}")
 async def get_project_files(project_id: int, db: Session = Depends(get_monitor_db)):
-    """Return a list of all files (with content) for a project."""
+    """Return a list of all file paths for a project (no content for speed)."""
     project = db.query(UserProject).filter(UserProject.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    files = db.query(ProjectFile).filter(ProjectFile.project_id == project_id).all()
-    return [{"file_path": f.file_path, "content": f.content or ""} for f in files]
+    files = db.query(ProjectFile.file_path).filter(ProjectFile.project_id == project_id).all()
+    return [{"file_path": f.file_path} for f in files]
+
+
+@router.get("/file-content/{project_id}")
+async def get_file_content(project_id: int, path: str, db: Session = Depends(get_monitor_db)):
+    """Fetch content for a specific file on demand."""
+    f = db.query(ProjectFile).filter(
+        ProjectFile.project_id == project_id,
+        ProjectFile.file_path == path
+    ).first()
+    if not f:
+        raise HTTPException(status_code=404, detail="File not found")
+    return {"file_path": f.file_path, "content": f.content or ""}
 
 
 @router.post("/chat")
 async def chat_with_agent(req: ChatRequest, db: Session = Depends(get_monitor_db)):
-    """Answer questions about a specific project using the monitoring agent."""
+    """Answer questions with massive project context (tree + code snippets + logs)."""
     project = db.query(UserProject).filter(
         UserProject.user_id == req.user_id,
         UserProject.project_name == req.project_name
@@ -133,48 +157,125 @@ async def chat_with_agent(req: ChatRequest, db: Session = Depends(get_monitor_db
     if not project:
         return {"response": f"Project '{req.project_name}' not found. Please connect it first using the CLI."}
 
-    # Build context from latest files and logs
+    # ── 1. Gather logs ────────────────────────────────────────────────────────
     recent_logs = db.query(ProjectLog).filter(
         ProjectLog.project_id == project.id
-    ).order_by(ProjectLog.timestamp.desc()).limit(20).all()
+    ).order_by(ProjectLog.timestamp.desc()).limit(200).all()
     recent_logs.reverse()
-
-    files = db.query(ProjectFile).filter(ProjectFile.project_id == project.id).all()
-
     log_context = "\n".join([l.log_line for l in recent_logs]) or "No logs captured yet."
-    file_context = "\n\n".join([
-        f"### {f.file_path}\n```\n{(f.content or '')[:800]}\n```"
-        for f in files[:5]
-    ]) or "No files synced yet."
 
-    # Convert logs for the agent
-    log_messages = [
-        LogMessage(type="terminal", data=l.log_line, timestamp=l.timestamp)
-        for l in recent_logs
+    # ── 2. Gather file list for Project Tree ──────────────────────────────────
+    all_files = db.query(ProjectFile).filter(ProjectFile.project_id == project.id).all()
+    
+    # Show more files in the tree to explain "Flow"
+    _TREE_SKIP = _re.compile(r'(\.pyc|__pycache__|\.git[\\/]|dist|build|DS_Store)', _re.I)
+    _CONTENT_SKIP = _re.compile(r'(node_modules|\.min\.[jc]s|package-lock|yarn\.lock|pnpm-lock|\.ico|\.png|\.jpg)', _re.I)
+    
+    _PRIO = {".py": 0, ".ts": 1, ".tsx": 1, ".js": 2, ".jsx": 2, ".json": 3, ".md": 4, ".env": 0, "requirements.txt": 0, "package.json": 0}
+
+    def _fprio(f):
+        path_lower = f.file_path.lower()
+        if "main" in path_lower or "app" in path_lower or "config" in path_lower or "index" in path_lower: return -1
+        ext = "." + f.file_path.rsplit(".", 1)[-1].lower() if "." in f.file_path else ""
+        return _PRIO.get(ext, 10)
+
+    # Project Tree (Structure)
+    tree_items = sorted([f.file_path for f in all_files if not _TREE_SKIP.search(f.file_path)])
+    file_tree = "\n".join(tree_items[:300]) # Up to 300 files in tree
+
+    # Code Analysis (Priority Files)
+    analysis_files = sorted([f for f in all_files if not _CONTENT_SKIP.search(f.file_path)], key=_fprio)
+    
+    # ── 3. Build code snippets (context budget) ───────────────────────────────
+    file_parts = []
+    CHAR_BUDGET = 25000 # Increased for better understanding
+    used = 0
+    
+    for f in analysis_files[:45]: # Increased to top 45 files
+        if used >= CHAR_BUDGET: break
+        content = (f.content or "").strip()
+        lines = content.split("\n")
+        # Take up to 100 lines per file
+        snippet = "\n".join(lines[:100])[:1800]
+        file_parts.append(f"### FILE: {f.file_path}\n```\n{snippet}\n```")
+        used += len(snippet)
+    
+    file_snippets_context = "\n\n".join(file_parts) or "No code context available."
+
+    # ── 4. Build system prompt ────────────────────────────────────────────────
+    system_prompt = (
+        f"You are Querion AI, a senior expert developer and architect.\n"
+        f"Project: '{req.project_name}'\n\n"
+        "URGENT TASKS:\n"
+        "1. EXPLAIN FLOW: Use the PROJECT TREE to explain how the app works (backend, frontend, routing).\n"
+        "2. LOG ANALYSIS: Look at the RECENT LOGS. Find exact errors (e.g., 'Port in use', '404', 'TypeError').\n"
+        "3. LINE-BY-LINE FIX: Reference the exact file and line number from the CODE snippets. Provide the fix.\n"
+        "4. COMMANDS: Tell the user exactly what to run in the terminal.\n\n"
+        f"### PROJECT TREE (Structure)\n{file_tree}\n\n"
+        f"### CODE SNIPPETS (Detailed)\n{file_snippets_context}\n\n"
+        f"### RECENT LOGS (Live)\n```\n{log_context}\n```\n"
+    )
+
+    # ── 5. Call OpenRouter with Expanded Fallbacks ─────────────────────────────
+    api_key = settings.OPENROUTER_API_KEY or settings.LLM_API_KEY
+    models_to_try = [
+        "google/gemini-2.0-flash-exp:free",
+        "mistralai/mistral-7b-instruct:free",
+        "deepseek/deepseek-r1:free",
+        "google/gemini-flash-1.5",
+        "meta-llama/llama-3.1-8b-instruct:free",
+        "openrouter/auto"
     ]
+    
+    last_error = ""
+    for model_id in models_to_try:
+        try:
+            logger.info(f"🤖 User Prompting Model: {model_id}")
+            async with httpx.AsyncClient(timeout=50.0) as client:
+                resp = await client.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    json={
+                        "model": model_id,
+                        "messages": [
+                            {"role": "user", "content": f"CONTEXT:\n{system_prompt}\n\nQUESTION: {req.message}"},
+                        ],
+                        "temperature": 0.2,
+                    },
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                        "HTTP-Referer": "http://localhost:3000",
+                        "X-Title": "Querion",
+                    },
+                )
 
-    agent = get_agent()
-    if not agent:
-        # Fallback: return context-based answer without LLM
-        return {
-            "response": (
-                f"⚠️ AI agent not available (GROK_API_KEY may be missing).\n\n"
-                f"**Recent logs for {req.project_name}:**\n```\n{log_context[-1000:]}\n```"
-            )
-        }
+            logger.info(f"📡 API Response ({model_id}): {resp.status_code}")
+            
+            if resp.status_code == 200:
+                data = resp.json()
+                if "choices" in data and len(data["choices"]) > 0:
+                    answer = data["choices"][0]["message"]["content"].strip()
+                    return {"response": answer}
+            
+            last_error = f"{model_id} ({resp.status_code}): {resp.text[:150]}"
+            logger.warning(f"⚠️ Fail: {last_error}")
+            continue
 
-    try:
-        # Run agent with logs only for now (extend later to include file context)
-        result = await agent.run(log_messages)
-        fix_block = ""
-        if result.suggested_fix:
-            fix_block = "\n\n**Suggested Fix:**\n```python\n" + result.suggested_fix + "\n```"
-        return {"response": result.content + fix_block}
-    except Exception as e:
-        return {
-            "response": (
-                f"Analysis context for **{req.project_name}**:\n\n"
-                f"**Recent Logs:**\n```\n{log_context[-800:]}\n```\n\n"
-                f"*(AI agent error: {str(e)[:100]})*"
-            )
-        }
+        except Exception as e:
+            last_error = f"{model_id} (Ex): {str(e)}"
+            logger.error(f"❌ Error: {last_error}")
+            continue
+
+    # ── 6. Local Emergency Response (Never return 500) ─────────────────────────
+    # If all AI models fail, provide a manually generated summary based on local knowledge
+    error_found = "ERROR" in log_context.upper() or "EXCEPTION" in log_context.upper()
+    
+    local_response = (
+        f"⚠️ **AI Connection Issue (OpenRouter Overloaded)**\n"
+        f"Multiple AI models failed to respond. Here is a local analysis of your project state:\n\n"
+        f"**1. Project Structure:** I see {len(tree_items)} files, including entry points like `package.json` or `requirements.txt`.\n"
+        f"**2. Log Analysis:** " + ("I detected potential ERRORS in your logs. Please check the 'Live Logs' tab for red text." if error_found else "Logs look stable for now.") + "\n"
+        f"**3. Suggested Fix:** Check your OpenRouter account for credits or API limits. \n\n"
+        f"**Last API Error:** `{last_error}`"
+    )
+    return {"response": local_response}

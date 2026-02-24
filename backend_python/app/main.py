@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 from datetime import datetime
 from contextlib import asynccontextmanager
 
-from app.routes import connection_routes, query_routes, url_connect_routes, security_routes
+from app.routes import connection_routes, query_routes, url_connect_routes, security_routes, voice_routes
 from app.monitoring.routers import monitor_ws, monitor_sync
 from app.monitoring.dash_app import init_dash
 from app.models import init_db
@@ -18,6 +18,11 @@ async def lifespan(app: FastAPI):
     try:
         init_db()
         init_monitor_db()
+        
+        # Preheat Whisper model in background
+        from app.services.voice_service import preheat_model
+        preheat_model()
+        
         print(f"✅ Querion Backend running on port {settings.PORT}")
     except Exception as e:
         print(f"❌ Database initialization failed: {e}")
@@ -51,7 +56,7 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    return {"status": "ok", "version": "1.0.0"}
+    return {"status": "ok", "version": "1.0.1-fallbacks"}
 
 # ── API Routes ────────────────────────────────────────────────────────────────
 app.include_router(connection_routes.router, prefix="/api/connections", tags=["connections"])
@@ -59,6 +64,7 @@ app.include_router(connection_routes.router, prefix="/api/connect",     tags=["c
 app.include_router(query_routes.router,      prefix="/api/query",       tags=["query"])
 app.include_router(url_connect_routes.router,prefix="/api/url",         tags=["url"])
 app.include_router(security_routes.router,   prefix="/api/security",    tags=["security"])
+app.include_router(voice_routes.router,      prefix="/api",             tags=["voice"])
 app.include_router(monitor_ws.router,                                   tags=["monitoring-ws"])
 app.include_router(monitor_sync.router,      prefix="/api/monitor",     tags=["monitoring"])
 
