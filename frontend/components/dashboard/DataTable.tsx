@@ -8,6 +8,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { cn } from '@/utils/cn';
+import axios from 'axios';
 
 interface DataTableProps {
     columns: string[];
@@ -106,7 +107,7 @@ export const DataTable = ({ columns, rows }: DataTableProps) => {
         doc.save("query_results.pdf");
     };
 
-    const downloadFile = (content: string, fileName: string, contentType: string) => {
+    const downloadFile = (content: any, fileName: string, contentType: string) => {
         const blob = new Blob([content], { type: contentType });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
@@ -114,6 +115,35 @@ export const DataTable = ({ columns, rows }: DataTableProps) => {
         link.download = fileName;
         link.click();
         URL.revokeObjectURL(url);
+    };
+
+    const handleExportEnterpriseReport = async (format: string = 'pdf') => {
+        if (!rows || rows.length === 0) return;
+
+        try {
+            // Use current search term as fallback for query detection if no other context
+            const user_query = searchTerm || "General Data Report";
+
+            const response = await axios.post('http://localhost:4000/api/report/generate', {
+                data: rows,
+                user_query: user_query,
+                format: format
+            }, {
+                responseType: 'blob'
+            });
+
+            const contentDisposition = response.headers['content-disposition'];
+            let filename = `Enterprise_Report_${new Date().getTime()}.${format}`;
+            if (contentDisposition) {
+                const filenameMatch = contentDisposition.match(/filename=(.+)/);
+                if (filenameMatch.length === 2) filename = filenameMatch[1];
+            }
+
+            downloadFile(response.data, filename, response.headers['content-type']);
+        } catch (error) {
+            console.error("Failed to generate enterprise report", error);
+            alert("Report generation failed. Please ensure the backend is running.");
+        }
     };
 
     return (
@@ -132,6 +162,16 @@ export const DataTable = ({ columns, rows }: DataTableProps) => {
                         />
                     </div>
                     <div className="flex items-center gap-1">
+                        <Button
+                            variant="primary"
+                            size="sm"
+                            onClick={() => handleExportEnterpriseReport('pdf')}
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs h-9 flex items-center gap-2 shadow-sm"
+                        >
+                            <Download size={14} />
+                            Enterprise Report
+                        </Button>
+                        <div className="w-[1px] h-6 bg-gray-200 mx-1" />
                         <Button variant="outline" size="sm" onClick={handleExportCSV} className="text-xs h-9">CSV</Button>
                         <Button variant="outline" size="sm" onClick={handleExportExcel} className="text-xs h-9">Excel</Button>
                         <Button variant="outline" size="sm" onClick={handleExportPDF} className="text-xs h-9">PDF</Button>
