@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 
 from app.routes import connection_routes, query_routes, url_connect_routes, security_routes, voice_routes, report_routes
 from app.monitoring.routers import monitor_ws, monitor_sync
+from app.reporting.api import router as reporting_router
 from app.monitoring.dash_app import init_dash
 from app.models import init_db
 from app.monitoring.models import init_monitor_db
@@ -68,6 +69,7 @@ app.include_router(voice_routes.router,      prefix="/api",             tags=["v
 app.include_router(monitor_ws.router,                                   tags=["monitoring-ws"])
 app.include_router(monitor_sync.router,      prefix="/api/monitor",     tags=["monitoring"])
 app.include_router(report_routes.router,     prefix="/api/report",      tags=["reports"])
+app.include_router(reporting_router,                                    tags=["Enterprise Reporting"])
 
 # ── Dash dashboard ────────────────────────────────────────────────────────────
 init_dash(app)
