@@ -135,9 +135,43 @@ export default function ConnectPage() {
                                                     <p className="text-gray-600">Successfully processed <strong>{connectionData.type.toUpperCase()}</strong> content from the URL.</p>
                                                 </div>
                                             </div>
-                                            <Button onClick={handleProceed} size="lg" className="shadow-lg shadow-indigo-200">
-                                                Go to Dashboard <ArrowRight className="ml-2 w-4 h-4" />
-                                            </Button>
+                                            <div className="flex items-center gap-2">
+                                                {url.includes('iris.csv') && (
+                                                    <Button
+                                                        variant="outline"
+                                                        size="lg"
+                                                        className="border-indigo-600 text-indigo-600 hover:bg-indigo-50"
+                                                        onClick={async () => {
+                                                            try {
+                                                                const axios = (await import('axios')).default;
+                                                                const response = await axios.post('http://localhost:4000/reporting/generate-report', {
+                                                                    user_query: "Official Iris Dataset Analysis Report",
+                                                                    sql_query: "URL Data Extraction",
+                                                                    data: connectionData.data, // Use the full data
+                                                                    metadata: { database_name: "Iris Dataset" },
+                                                                    export_format: "pdf"
+                                                                }, { responseType: 'blob' });
+
+                                                                const url = window.URL.createObjectURL(new Blob([response.data]));
+                                                                const link = document.createElement('a');
+                                                                link.href = url;
+                                                                link.setAttribute('download', 'Official_Iris_Report.pdf');
+                                                                document.body.appendChild(link);
+                                                                link.click();
+                                                                link.remove();
+                                                            } catch (e) {
+                                                                console.error(e);
+                                                                alert("Failed to generate report");
+                                                            }
+                                                        }}
+                                                    >
+                                                        Download Official PDF Report
+                                                    </Button>
+                                                )}
+                                                <Button onClick={handleProceed} size="lg" className="shadow-lg shadow-indigo-200">
+                                                    Go to Dashboard <ArrowRight className="ml-2 w-4 h-4" />
+                                                </Button>
+                                            </div>
                                         </div>
                                     </Card>
 

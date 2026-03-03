@@ -16,7 +16,8 @@ CRITICAL RULES:
 5. If the exact filter column is unclear, use a plausible one or a generic COUNT.
 6. SAFETY: Do NOT assume ANY tables exist unless they are in the schema.
 7. If the question mentions an entity (e.g. "patients") and you see a similar table name (e.g. "patient_data"), USE IT.
-8. Output MUST be RAW JSON with "sql" and "explanation". No markdown.
+8. REPORT REQUESTS: If the user asks for a "report", "PDF", "Excel", or "CSV", your task is STILL to generate the SELECT query that fetches the relevant data for that report. Do NOT apologize or say you cannot generate reports; simply provide the SQL.
+9. Output MUST be RAW JSON with "sql" and "explanation". No markdown.
 
 Output format:
 {

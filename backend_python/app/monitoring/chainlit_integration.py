@@ -6,10 +6,18 @@ from app.monitoring.agents.monitoring_agent import MonitoringAgent
 from app.config import settings
 from app.monitoring.models import MonitorSessionLocal, UserProject, ProjectFile, ProjectLog
 from app.monitoring.schemas import LogMessage
+from app.models import SessionLocal, Connection
+from app.services.encryption import decrypt
+from app.services.mysql_executor import MySQLService
+from app.services.nl_to_sql import convert_nl_to_sql
+from app.reporting.report_engine import ReportGenerator
 from sqlalchemy.orm import Session
+import os
 
-# Lazy agent — never instantiated at import time (avoids blocking startup)
+# Lazy agents — never instantiated at import time (avoids blocking startup)
 _agent = None
+_report_generator = None
+
 def get_agent():
     global _agent
     if _agent is None:
@@ -18,6 +26,12 @@ def get_agent():
         except Exception as e:
             print(f"⚠️ Agent init failed: {e}")
     return _agent
+
+def get_report_generator():
+    global _report_generator
+    if _report_generator is None:
+        _report_generator = ReportGenerator()
+    return _report_generator
 
 
 def get_db():
@@ -31,6 +45,7 @@ def get_db():
 async def start():
     cl.user_session.set("mode", "database") # Default mode
     cl.user_session.set("current_project", None)
+    cl.user_session.set("current_connection_id", None)
     
     # CSS for the Indigo Theme and Floating Button
     # Note: Chainlit allows custom CSS injection
@@ -98,33 +113,60 @@ async def on_monitoring_mode(action: cl.Action):
 async def on_database_mode(action: cl.Action):
     cl.user_session.set("mode", "database")
     cl.user_session.set("current_project", None)
-    await cl.Message(content="Switched to **Database Assistant**. Ask me anything about your SQL data.").send()
+    await show_connection_selector()
 
-async def show_project_selector():
-    db = get_db()
+async def show_connection_selector():
+    db = SessionLocal()
     try:
-        # Mocking user_id as 'default_user' for now
-        projects = db.query(UserProject).filter(UserProject.user_id == 'default_user').all()
+        connections = db.query(Connection).all()
+        header_content = "## Database Assistant\nSelect a connection to start querying your data or generate reports."
         
-        header_content = "## Backend Monitoring\nSelect a project to view deep context, logs, and get intelligent fixes."
-        
-        if not projects:
-            content = f"{header_content}\n\nNo projects connected yet. Run `querion watch --project \"MyProject\"` to get started."
-            actions = [cl.Action(name="switch_to_database", value="database", label="Switch to Database")]
+        if not connections:
+            content = f"{header_content}\n\nNo database connections found. Please go to the [Connect Page](/connect) to add one."
+            actions = [cl.Action(name="switch_to_monitoring", value="monitoring", label="Switch to Monitoring")]
         else:
             content = f"{header_content}\n\n"
             actions = []
-            for p in projects:
-                status = "Connected"
-                last_upd = p.last_updated.strftime("%Y-%m-%d %H:%M")
-                content += f"**{p.project_name}**\n*Last updated: {last_upd}*\n\n"
-                actions.append(cl.Action(name="select_project", value=p.project_name, label=f"Open {p.project_name}"))
+            for c in connections:
+                content += f"**{c.name}** ({c.database})\n"
+                actions.append(cl.Action(name="select_connection", value=c.id, label=f"Connect to {c.name}"))
             
-            actions.append(cl.Action(name="switch_to_database", value="database", label="Switch to Database"))
+            actions.append(cl.Action(name="switch_to_monitoring", value="monitoring", label="Switch to Monitoring"))
         
         await cl.Message(content=content, actions=actions).send()
     finally:
         db.close()
+
+@cl.action_callback("select_connection")
+async def on_select_connection(action: cl.Action):
+    connection_id = action.value
+    db = SessionLocal()
+    connection = db.query(Connection).filter(Connection.id == connection_id).first()
+    db.close()
+    
+    if connection:
+        cl.user_session.set("current_connection_id", connection_id)
+        cl.user_session.set("db_interaction_mode", "result") # Default to result
+        
+        actions = [
+            cl.Action(name="set_interaction_mode", value="result", label="📊 Data Result (Table View)", description="Get quick data tables and summaries"),
+            cl.Action(name="set_interaction_mode", value="report", label="📄 Professional Report (PDF/Excel)", description="Generate high-quality enterprise reports with charts")
+        ]
+        
+        await cl.Message(
+            content=f"### Connected to: **{connection.name}**\n\nHow would you like me to process your queries today? You can switch this at any time.",
+            actions=actions
+        ).send()
+
+@cl.action_callback("set_interaction_mode")
+async def on_set_interaction_mode(action: cl.Action):
+    new_mode = action.value
+    cl.user_session.set("db_interaction_mode", new_mode)
+    
+    mode_text = "📊 **Data Result Mode**" if new_mode == "result" else "📄 **Professional Report Mode**"
+    desc = "Ask me questions and I'll show you the data table." if new_mode == "result" else "Tell me what report you need (e.g., 'Sales Summary') and I'll generate a PDF with charts."
+    
+    await cl.Message(content=f"Sub-mode switched to: {mode_text}\n{desc}").send()
 
 @cl.action_callback("select_project")
 async def on_select_project(action: cl.Action):
@@ -185,6 +227,118 @@ async def main(message: cl.Message):
         finally:
             db.close()
     else:
-        # DB Logic (existing)
-        # DO NOT MODIFY OR REPLACE ANY EXISTING CODE RELATED TO DATABASE QUERYING
-        pass
+        # DB Logic & Reporting
+        connection_id = cl.user_session.get("current_connection_id")
+        if not connection_id:
+            await cl.Message(content="Please select a database connection first.").send()
+            await show_connection_selector()
+            return
+
+        db = SessionLocal()
+        connection = db.query(Connection).filter(Connection.id == connection_id).first()
+        db.close()
+
+        if not connection:
+            await cl.Message(content="Connection no longer exists. Please re-select.").send()
+            await show_connection_selector()
+            return
+
+        params = {
+            "host": connection.host,
+            "port": connection.port,
+            "database": connection.database,
+            "user": connection.username,
+            "password": decrypt(connection.password)
+        }
+
+        msg = cl.Message(content="Analyzing your request...")
+        await msg.send()
+
+        try:
+            # 1. Determine if we should generate a report
+            interaction_mode = cl.user_session.get("db_interaction_mode") or "result"
+            keyword_report = any(word in message.content.lower() for word in ["report", "generate", "download", "export", "pdf", "excel", "csv"])
+            
+            # Explicitly set is_report_request if mode is 'report' OR keywords match
+            is_report_request = (interaction_mode == "report") or keyword_report
+            
+            # Clean prompt for SQL generator so it doesn't get confused by "PDF report"
+            sql_prompt = message.content
+            if is_report_request:
+                # Add instruction to LLM to focus on DATA needed for the report
+                sql_prompt += " (Focus: Generate the SELECT query to fetch all raw data required for this request. Do not mention reports in your explanation.)"
+
+            # 2. Get Schema
+            schema = MySQLService.get_schema_summary(params)
+            
+            # 3. Convert NL to SQL
+            sql_result = await convert_nl_to_sql(schema, sql_prompt)
+            
+            if not sql_result.get("sql"):
+                msg.content = f"Sorry, I couldn't generate a query for that. {sql_result.get('explanation', '')}"
+                await msg.update()
+                return
+
+            # 4. Execute SQL
+            data_result = MySQLService.execute_read_only_query(params, sql_result["sql"])
+            data = data_result.get("rows", [])
+
+            if not data:
+                msg.content = f"Query executed successfully but returned **no data**.\n\n**SQL:**\n```sql\n{sql_result['sql']}\n```"
+                await msg.update()
+                return
+
+            if is_report_request:
+                msg.content = f"Data fetched ({len(data)} rows). Generating professional report..."
+                await msg.update()
+                
+                # Determine format (default pdf)
+                fmt = "pdf"
+                if "excel" in message.content.lower() or "xlsx" in message.content.lower(): fmt = "excel"
+                elif "csv" in message.content.lower(): fmt = "csv"
+                elif "json" in message.content.lower(): fmt = "json"
+
+                # Generate Report
+                gen = get_report_generator()
+                report_res = gen.generate_report(
+                    user_query=message.content,
+                    sql_query=sql_result["sql"],
+                    data=data,
+                    metadata={"database_name": connection.database},
+                    export_format=fmt
+                )
+
+                if report_res["status"] == "success":
+                    file_path = report_res["file_path"]
+                    filename = os.path.basename(file_path)
+                    
+                    # Serve file via elements
+                    elements = [
+                        cl.File(name=filename, path=file_path, display="inline")
+                    ]
+                    msg.content = f"✅ **Report Generated Successfully!**\n\n**Type:** {report_res['report_type'].replace('_', ' ').title()}\n**Status:** Ready for download\n\n**SQL Used:**\n```sql\n{sql_result['sql']}\n```"
+                    msg.elements = elements
+                    await msg.update()
+                else:
+                    msg.content = f"❌ Report generation failed: {report_res.get('message')}"
+                    await msg.update()
+            else:
+                # Normal Response
+                summary = f"I found **{len(data)}** records.\n\n**Sample Data:**\n"
+                # Show first 5 rows as a table
+                sample = data[:5]
+                headers = list(sample[0].keys())
+                table_md = "| " + " | ".join(headers) + " |\n"
+                table_md += "| " + " | ".join(["---"] * len(headers)) + " |\n"
+                for row in sample:
+                    table_md += "| " + " | ".join([str(row.get(h, "")) for h in headers]) + " |\n"
+                
+                msg.content = f"{summary}{table_md}\n\n"
+                msg.actions = [
+                    cl.Action(name="set_interaction_mode", value="report", label="📄 Generate Full Professional Report", description="Transform these results into a branded PDF/Excel report with charts")
+                ]
+                await msg.update()
+
+        except Exception as e:
+            msg.content = f"⚠️ An error occurred: {str(e)}"
+            await msg.update()
