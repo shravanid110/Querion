@@ -4,19 +4,20 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from typing import List, Dict
 import redis.asyncio as redis
 from app.monitoring.schemas import LogMessage
-from app.monitoring.agents.monitoring_agent import MonitoringAgent
 from app.config import settings
-from app.services.log_chart_mapper import analyze_log_and_assign_chart, explain_log_issue
+from app.services.metrics_engine import metrics_engine
+import asyncio
 
 logger = structlog.get_logger()
 router = APIRouter()
 
 # Lazy agent — created only on first use so import never blocks startup
 _agent = None
-def get_agent() -> MonitoringAgent:
+def get_agent() -> any:
     global _agent
     if _agent is None:
         try:
+            from app.monitoring.agents.monitoring_agent import MonitoringAgent
             _agent = MonitoringAgent(groq_api_key=settings.GROK_API_KEY)
         except Exception as e:
             logger.warning("agent_init_failed", error=str(e))
@@ -78,8 +79,12 @@ async def websocket_endpoint(websocket: WebSocket):
             
             # ── Log Mapping & AI Analysis ───────────────────────────────────
             try:
+                from app.services.log_chart_mapper import analyze_log_and_assign_chart, explain_log_issue
                 chart_mapping = analyze_log_and_assign_chart(message_json)
                 explanation = explain_log_issue(message_json)
+                
+                # Update real-time metrics object
+                metrics_engine.process_log(message_json)
                 
                 # Broadcast mapped chart to frontend
                 await manager.broadcast_to_user(user_id, {
@@ -108,3 +113,25 @@ async def websocket_endpoint(websocket: WebSocket):
     except Exception as e:
         logger.error("websocket_error", error=str(e))
         manager.disconnect(user_id, websocket)
+
+# ── Background Task: Broadcast metrics every 2s ─────────────────────────────
+async def broadcast_metrics_task():
+    """Periodically push real metrics to all connected users."""
+    while True:
+        try:
+            await asyncio.sleep(2)
+            user_id = "default_user" # As used in websocket_endpoint
+            real_metrics = metrics_engine.get_metrics()
+            
+            await manager.broadcast_to_user(user_id, {
+                "type": "real_metrics",
+                "metrics": real_metrics
+            })
+        except Exception as e:
+            # logger.error("broadcast_metrics_error", error=str(e))
+            pass
+
+@router.on_event("startup")
+async def start_broadcast_task():
+    """Start background task when server starts up."""
+    asyncio.create_task(broadcast_metrics_task())

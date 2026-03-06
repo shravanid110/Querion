@@ -38,7 +38,16 @@ class ProjectLog(Base):
 
 # Separate DB for monitoring as requested
 MONITOR_DB_URL = "sqlite:///./querion_monitor.db"
-monitor_engine = create_engine(MONITOR_DB_URL, connect_args={"check_same_thread": False})
+monitor_engine_args = {
+    "connect_args": {"check_same_thread": False},
+    "pool_pre_ping": True
+}
+
+if "sqlite" not in MONITOR_DB_URL:
+    monitor_engine_args["pool_size"] = 20
+    monitor_engine_args["max_overflow"] = 30
+
+monitor_engine = create_engine(MONITOR_DB_URL, **monitor_engine_args)
 MonitorSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=monitor_engine)
 
 def init_monitor_db():

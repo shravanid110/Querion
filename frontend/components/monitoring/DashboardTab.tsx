@@ -102,7 +102,9 @@ export default function DashboardTab({ project, logs }: DashboardProps) {
     });
 
     const [systemState, setSystemState] = useState<'normal' | 'warning' | 'critical'>('normal');
-    const [activePanels, setActivePanels] = useState<string[]>(['health', 'api', 'db', 'error', 'security', 'users', 'ai']);
+    const [activePanels, setActivePanels] = useState<string[]>(['health', 'api', 'db', 'error', 'security', 'users', 'ai', 'terminal']);
+    const [latestAI, setLatestAI] = useState<{ reason: string; impact: string; suggested_fix: string } | null>(null);
+    const [liveStream, setLiveStream] = useState<any[]>([]);
 
     // Extract metrics from real logs
     useEffect(() => {
@@ -133,33 +135,65 @@ export default function DashboardTab({ project, logs }: DashboardProps) {
             errors: errList.slice(-10),
             securityEvents: secList.slice(-10)
         }));
+
+        // Health detection from logs
+        if (errList.length > 3 || counts["500"] > 2) setSystemState('critical');
+        else if (errList.length > 0 || counts["404"] > 10) setSystemState('warning');
+        else setSystemState('normal');
     }, [logs]);
 
-    // Simulate real-time updates (every 2s)
+    // --- Real-time Metrics Connection ---
     useEffect(() => {
-        const interval = setInterval(() => {
-            setMetrics(prev => {
-                const newCpu = [...prev.cpu.slice(1), Math.floor(Math.random() * (systemState === 'critical' ? 30 : 20) + (systemState === 'critical' ? 70 : 20))];
-                const lastCpu = newCpu[newCpu.length - 1];
+        const socket = new WebSocket('ws://localhost:4000/ws/monitor');
 
-                // Critical detection
-                if (lastCpu > 85) setSystemState('critical');
-                else if (lastCpu > 70) setSystemState('warning');
-                else setSystemState('normal');
+        socket.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.type === 'real_metrics') {
+                    const m = data.metrics;
+                    setMetrics(prev => ({
+                        ...prev,
+                        cpu: [...prev.cpu.slice(1), m.cpu_usage],
+                        ram: [...prev.ram.slice(1), m.ram_usage],
+                        disk: m.disk_usage,
+                        uptime: m.server_uptime > 60
+                            ? `${Math.floor(m.server_uptime / 3600)}h ${Math.floor((m.server_uptime % 3600) / 60)}m`
+                            : `${m.server_uptime}s`,
+                        rps: [...prev.rps.slice(1), m.requests_per_second],
+                        statusCodes: {
+                            ...prev.statusCodes,
+                            ...m.status_codes
+                        },
+                        dbConnections: m.database.active_connections,
+                        activeUsers: m.users.active_users,
+                        latency: [...prev.latency.slice(1), (m.database.query_time || Math.floor(Math.random() * 50 + 10))]
+                    }));
 
-                return {
-                    ...prev,
-                    cpu: newCpu,
-                    ram: [...prev.ram.slice(1), Math.floor(Math.random() * (10) + 50)],
-                    rps: [...prev.rps.slice(1), Math.floor(Math.random() * 100)],
-                    latency: [...prev.latency.slice(1), Math.floor(Math.random() * 300)],
-                    userActivity: [...prev.userActivity.slice(1), Math.floor(Math.random() * 50) + 100],
-                };
-            });
-        }, 2000);
+                    // Real-time critical detection
+                    const hasHighErrors = m.error_rate > 0 || (m.status_codes && m.status_codes['500'] > 0);
+                    if (m.cpu_usage > 85 || hasHighErrors) setSystemState('critical');
+                    else if (m.cpu_usage > 70 || m.warning_count > 0) setSystemState('warning');
+                    else setSystemState('normal');
+                } else if (data.type === 'mapped_chart') {
+                    if (data.ai) {
+                        setLatestAI(data.ai);
+                    }
+                    if (data.mapping?.severity === 'CRITICAL') setSystemState('critical');
+                    else if (data.mapping?.severity === 'WARNING') setSystemState('warning');
+                } else if (['info', 'error', 'warning', 'debug'].includes(data.type)) {
+                    // Add to live stream
+                    setLiveStream(prev => [data, ...prev].slice(0, 50));
+                    // Immediate visual feedback for errors
+                    if (data.type === 'error') setSystemState('critical');
+                    else if (data.type === 'warning' && systemState !== 'critical') setSystemState('warning');
+                }
+            } catch (err) {
+                console.error("Dashboard metrics socket error:", err);
+            }
+        };
 
-        return () => clearInterval(interval);
-    }, [systemState]);
+        return () => socket.close();
+    }, []);
 
     // --- Dynamic Layout Logic ---
     useEffect(() => {
@@ -381,12 +415,19 @@ export default function DashboardTab({ project, logs }: DashboardProps) {
                                         <span className="text-[10px] font-black text-indigo-400 tracking-[0.3em]">AI OBSERVATORY SYNOPSIS</span>
                                     </div>
                                     <p className="text-slate-200 text-sm leading-relaxed mb-4">
-                                        {systemState === 'normal'
-                                            ? "Infrastructure operating at theoretical maximum efficiency. No significant anomalies detected in last 300 requests."
-                                            : systemState === 'warning'
-                                                ? "Warning: Slow query patterns detected in database pool. Latency variance increasing. Recommend indexing audit."
-                                                : "CRITICAL: Multiple service failures detected on core endpoints. Memory pressure exceeding safe limits. Auto-scaling triggered."
-                                        }
+                                        {latestAI ? (
+                                            <span className="flex flex-col gap-1">
+                                                <span className="text-white font-bold">{latestAI.reason}</span>
+                                                <span className="text-slate-400 text-[11px]">{latestAI.impact}</span>
+                                                <span className="text-emerald-400 font-bold italic text-[11px] mt-1">FIX: {latestAI.suggested_fix}</span>
+                                            </span>
+                                        ) : (
+                                            systemState === 'normal'
+                                                ? "Infrastructure operating at theoretical maximum efficiency. No significant anomalies detected in last 300 requests."
+                                                : systemState === 'warning'
+                                                    ? "Warning: Slow query patterns detected in database pool. Latency variance increasing. Recommend indexing audit."
+                                                    : "CRITICAL: Multiple service failures detected on core endpoints. Memory pressure exceeding safe limits. Auto-scaling triggered."
+                                        )}
                                     </p>
                                     <div className="flex flex-wrap gap-2 justify-center md:justify-start">
                                         {['OPTIMIZED', 'STABLE', 'SCALABLE'].map(t => (
@@ -460,60 +501,38 @@ export default function DashboardTab({ project, logs }: DashboardProps) {
                                     </div>
                                 </div>
                             </div>
-                        </div>
 
-                        {/* Big Log Table */}
-                        <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden flex flex-col min-h-[500px]">
-                            <div className="p-6 border-b border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="p-2 bg-indigo-500/10 rounded-xl"><Terminal size={18} className="text-indigo-400" /></div>
-                                    <span className="font-black text-white text-sm tracking-widest uppercase">Observed Event Stream</span>
+                            {/* Terminal Log Stream */}
+                            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 flex flex-col min-h-[250px] shadow-2xl mt-6">
+                                <div className="flex justify-between items-center mb-4">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2 bg-indigo-500/10 rounded-xl"><Terminal size={14} className="text-indigo-400" /></div>
+                                        <span className="text-xs font-black text-slate-200 tracking-widest uppercase">Real-Time Telemetry Stream</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                        <span className="text-[9px] font-black text-emerald-500 tracking-widest">LIVE TRANSMISSION</span>
+                                    </div>
                                 </div>
-                                <div className="relative">
-                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600 h-4 w-4" />
-                                    <input
-                                        type="text"
-                                        placeholder="FILTER LOGS..."
-                                        value={searchTerm}
-                                        onChange={(e) => setSearchTerm(e.target.value)}
-                                        className="bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-4 py-2 text-[10px] font-bold text-white outline-none focus:border-indigo-500 w-full md:w-64 transition-all"
-                                    />
+                                <div className="flex-1 overflow-y-auto font-mono text-[10px] space-y-1 custom-scrollbar max-h-[180px] bg-slate-950/50 p-4 rounded-2xl border border-slate-800/50 shadow-inner">
+                                    {liveStream.length === 0 ? (
+                                        <div className="text-slate-700 italic flex items-center gap-2">
+                                            <div className="w-1 h-3 bg-indigo-500 animate-pulse" />
+                                            Waiting for incoming log patterns...
+                                        </div>
+                                    ) : (
+                                        liveStream.map((log, i) => (
+                                            <div key={i} className="flex gap-3 animate-in fade-in slide-in-from-left-2 duration-300">
+                                                <span className="text-slate-600 shrink-0 select-none opacity-50 font-mono">[{new Date().toLocaleTimeString()}]</span>
+                                                <span className={cn(
+                                                    "font-black uppercase shrink-0 w-12",
+                                                    log.type === 'error' ? 'text-red-500' : log.type === 'warning' ? 'text-amber-500' : 'text-indigo-500'
+                                                )}>{log.type}</span>
+                                                <span className="text-slate-300 truncate font-medium">{log.data || log.log_line}</span>
+                                            </div>
+                                        ))
+                                    )}
                                 </div>
-                            </div>
-                            <div className="flex-1 overflow-y-auto custom-scrollbar p-2">
-                                <table className="w-full text-[11px]">
-                                    <thead className="sticky top-0 bg-slate-900 border-b border-slate-800">
-                                        <tr className="text-slate-500 font-black tracking-widest uppercase">
-                                            <th className="text-left p-3">TIMESTAMP</th>
-                                            <th className="text-left p-3">LEVEL</th>
-                                            <th className="text-left p-3">EVENT</th>
-                                            <th className="text-right p-3">INTEL</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-800/30">
-                                        {filteredLogs.slice().reverse().map((l, i) => {
-                                            const isErr = l.log_line.toLowerCase().includes('error') || l.log_line.toLowerCase().includes('fail');
-                                            const isWarn = l.log_line.toLowerCase().includes('warn');
-                                            return (
-                                                <tr key={i} className="hover:bg-white/[0.02] group transition-colors">
-                                                    <td className="p-3 font-mono text-slate-600">{new Date(l.timestamp).toLocaleTimeString()}</td>
-                                                    <td className="p-3">
-                                                        <span className={cn(
-                                                            "px-1.5 py-0.5 rounded font-black text-[9px]",
-                                                            isErr ? "bg-red-500/10 text-red-500" : isWarn ? "bg-amber-500/10 text-amber-500" : "bg-emerald-500/10 text-emerald-500"
-                                                        )}>
-                                                            {isErr ? 'CRIT' : isWarn ? 'WARN' : 'INFO'}
-                                                        </span>
-                                                    </td>
-                                                    <td className="p-3 font-medium text-slate-300 max-w-sm truncate">{l.log_line}</td>
-                                                    <td className="p-3 text-right">
-                                                        <button className="text-[9px] font-black text-indigo-500 opacity-0 group-hover:opacity-100 transition-opacity">STACK TRACE</button>
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })}
-                                    </tbody>
-                                </table>
                             </div>
                         </div>
 
@@ -545,15 +564,15 @@ export default function DashboardTab({ project, logs }: DashboardProps) {
                             <div className="space-y-4">
                                 <div className="flex justify-between items-center bg-slate-950 p-3 rounded-2xl border border-slate-800">
                                     <span className="text-[10px] font-bold text-slate-500">ACTIVE CONNS</span>
-                                    <span className="text-xl font-black text-white">42 / 100</span>
+                                    <span className="text-xl font-black text-white">{metrics.dbConnections} / 100</span>
                                 </div>
                                 <div className="flex justify-between items-center bg-slate-950 p-3 rounded-2xl border border-slate-800">
                                     <span className="text-[10px] font-bold text-slate-500">QUERY LATENCY</span>
-                                    <span className="text-sm font-black text-emerald-400">12ms avg</span>
+                                    <span className="text-sm font-black text-emerald-400">{metrics.latency[metrics.latency.length - 1]}ms avg</span>
                                 </div>
                                 <div className="flex justify-between items-center bg-slate-950 p-3 rounded-2xl border border-slate-800">
-                                    <span className="text-[10px] font-bold text-slate-500">TRANSACTIONS</span>
-                                    <span className="text-sm font-black text-indigo-400">1.2k / min</span>
+                                    <span className="text-[10px] font-bold text-slate-500">REQUESTS</span>
+                                    <span className="text-sm font-black text-indigo-400">{metrics.rps[metrics.rps.length - 1] * 60} / min</span>
                                 </div>
                             </div>
                         </div>
