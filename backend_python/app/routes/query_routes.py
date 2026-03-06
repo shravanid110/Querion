@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from app.models import get_db, Connection
 from app.services.encryption import decrypt
 from app.services.mysql_executor import MySQLService
-from app.services.nl_to_sql import convert_nl_to_sql
+from app.services.nl_to_sql import convert_nl_to_sql, generate_data_insights
 
 router = APIRouter()
 
@@ -36,13 +36,14 @@ async def run_query(connectionId: str = Body(...), prompt: str = Body(...), db: 
         result = await convert_nl_to_sql(schema, prompt)
 
         if not result.get("sql"):
-            raise HTTPException(
-                status_code=422, 
-                detail={
-                    "error": result.get("explanation", "Could not generate SQL for this prompt."),
-                    "explanation": result.get("explanation")
-                }
-            )
+            # Point 7: Provide a friendly, informative explanation instead of failing.
+            return {
+                "sql": None,
+                "explanation": result.get("explanation", "I couldn't process this request. Could you try rephrasing?"),
+                "columns": [],
+                "rows": [],
+                "metrics": {"totalRows": 0, "approxSum": 0}
+            }
 
         # 4. Execute SQL
         data = MySQLService.execute_read_only_query(connection_params, result["sql"])
@@ -60,9 +61,27 @@ async def run_query(connectionId: str = Body(...), prompt: str = Body(...), db: 
                 field = number_fields[0]
                 numeric_sum = sum(float(row.get(field) or 0) for row in rows)
 
+        # 6. Generate Real-time Data Insights (Rule 3)
+        rich_explanation = result.get("explanation", "")
+        
+        # If we have data, let's get deep insights
+        if total_rows > 0 and result.get("sql"):
+            try:
+                print(f"[Query Route] Generating deep data insights for {total_rows} rows...")
+                data_insights = await generate_data_insights(prompt, result["sql"], rows, schema)
+                
+                # Merge the initial explanation (which has Reason/Available Data) with the data insights
+                # We extract the first part of the explanation if it has the headers
+                explanation_parts = rich_explanation.split("📊 Data Visualization & Insights:")
+                header_part = explanation_parts[0] if explanation_parts else rich_explanation
+                
+                rich_explanation = f"{header_part.strip()}\n\n{data_insights.strip()}"
+            except Exception as e:
+                print(f"[Query Route] Insights generation failed: {e}")
+
         return {
             "sql": result["sql"],
-            "explanation": result.get("explanation"),
+            "explanation": rich_explanation,
             "columns": data["columns"],
             "rows": rows,
             "metrics": {
