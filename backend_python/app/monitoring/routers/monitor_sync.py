@@ -188,7 +188,7 @@ async def chat_with_agent(req: ChatRequest, db: Session = Depends(get_monitor_db
     
     # ── 3. Build code snippets (context budget) ───────────────────────────────
     file_parts = []
-    CHAR_BUDGET = 25000 # Increased for better understanding
+    CHAR_BUDGET = 12000 # Reduced for better compatibility with free models
     used = 0
     
     for f in analysis_files[:45]: # Increased to top 45 files
@@ -216,13 +216,20 @@ async def chat_with_agent(req: ChatRequest, db: Session = Depends(get_monitor_db
         f"### RECENT LOGS (Live)\n```\n{log_context}\n```\n"
     )
 
-    # ── 5. Call OpenRouter with Expanded Fallbacks ─────────────────────────────
+    # ── 5. Call LLM with Robust Fallbacks ─────────────────────────────────────
     api_key = settings.OPENROUTER_API_KEY or settings.LLM_API_KEY
+    if not api_key:
+        logger.error("❌ No API Key found (OPENROUTER_API_KEY or LLM_API_KEY)")
+    else:
+        logger.info(f"🔑 API Key found: {api_key[:4]}...{api_key[-4:]}")
+    
+    base_url = settings.LLM_BASE_URL.rstrip('/')
+    
+    # Selected stable models on OpenRouter
     models_to_try = [
         "google/gemini-2.0-flash-exp:free",
+        "google/gemini-flash-1.5-8b:free",
         "mistralai/mistral-7b-instruct:free",
-        "deepseek/deepseek-r1:free",
-        "google/gemini-flash-1.5",
         "meta-llama/llama-3.1-8b-instruct:free",
         "openrouter/auto"
     ]
@@ -231,16 +238,18 @@ async def chat_with_agent(req: ChatRequest, db: Session = Depends(get_monitor_db
     for model_id in models_to_try:
         try:
             logger.info(f"🤖 User Prompting Model: {model_id}")
-            async with httpx.AsyncClient(timeout=50.0) as client:
+            async with httpx.AsyncClient(timeout=90.0) as client:
+                payload = {
+                    "model": model_id,
+                    "messages": [
+                        {"role": "user", "content": f"CONTEXT:\n{system_prompt}\n\nQUESTION: {req.message}"},
+                    ],
+                    "temperature": 0.2,
+                }
+                
                 resp = await client.post(
-                    "https://openrouter.ai/api/v1/chat/completions",
-                    json={
-                        "model": model_id,
-                        "messages": [
-                            {"role": "user", "content": f"CONTEXT:\n{system_prompt}\n\nQUESTION: {req.message}"},
-                        ],
-                        "temperature": 0.2,
-                    },
+                    f"{base_url}/chat/completions",
+                    json=payload,
                     headers={
                         "Authorization": f"Bearer {api_key}",
                         "Content-Type": "application/json",
@@ -254,16 +263,22 @@ async def chat_with_agent(req: ChatRequest, db: Session = Depends(get_monitor_db
             if resp.status_code == 200:
                 data = resp.json()
                 if "choices" in data and len(data["choices"]) > 0:
-                    answer = data["choices"][0]["message"]["content"].strip()
-                    return {"response": answer}
+                    content = data["choices"][0].get("message", {}).get("content", "")
+                    if content.strip():
+                        logger.info(f"✅ Successful response from {model_id} ({len(content)} chars)")
+                        return {"response": content.strip()}
+                    else:
+                        logger.warning(f"⚠️ Empty content from {model_id}")
+                else:
+                    logger.warning(f"⚠️ No choices in response from {model_id}: {data}")
             
-            last_error = f"{model_id} ({resp.status_code}): {resp.text[:150]}"
+            last_error = f"{model_id} ({resp.status_code}): {resp.text[:200]}"
             logger.warning(f"⚠️ Fail: {last_error}")
             continue
 
         except Exception as e:
             last_error = f"{model_id} (Ex): {str(e)}"
-            logger.error(f"❌ Error: {last_error}")
+            logger.error(f"❌ Error during AI call: {last_error}")
             continue
 
     # ── 6. Local Emergency Response (Never return 500) ─────────────────────────
@@ -271,11 +286,12 @@ async def chat_with_agent(req: ChatRequest, db: Session = Depends(get_monitor_db
     error_found = "ERROR" in log_context.upper() or "EXCEPTION" in log_context.upper()
     
     local_response = (
-        f"⚠️ **AI Connection Issue (OpenRouter Overloaded)**\n"
-        f"Multiple AI models failed to respond. Here is a local analysis of your project state:\n\n"
-        f"**1. Project Structure:** I see {len(tree_items)} files, including entry points like `package.json` or `requirements.txt`.\n"
-        f"**2. Log Analysis:** " + ("I detected potential ERRORS in your logs. Please check the 'Live Logs' tab for red text." if error_found else "Logs look stable for now.") + "\n"
-        f"**3. Suggested Fix:** Check your OpenRouter account for credits or API limits. \n\n"
-        f"**Last API Error:** `{last_error}`"
+        f"⚠️ **AI Connection Issue (OpenRouter Overloaded)**\n\n"
+        f"I tried multiple models ({', '.join(models_to_try)}), but all failed or returned empty responses.\n\n"
+        f"**Local Analysis of '{req.project_name}':**\n"
+        f"- **Files:** {len(tree_items)} files detected.\n"
+        f"- **Logs:** " + ("Potential errors found in recent logs. Please check the 'Live Logs' tab." if error_found else "Logs look clean.") + "\n"
+        f"- **Action:** Please check your OpenRouter API key and credits. The last error was: `{last_error}`"
     )
     return {"response": local_response}
+

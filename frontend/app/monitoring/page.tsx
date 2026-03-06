@@ -26,6 +26,7 @@ import {
     Loader2,
     Volume2,
 } from "lucide-react";
+import DashboardTab from "@/components/monitoring/DashboardTab";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -96,13 +97,13 @@ function MarkdownRenderer({ content }: { content: string }) {
                 i++;
             }
             elements.push(
-                <div key={i} className="my-3 rounded-xl overflow-hidden border border-slate-700">
+                <div key={i} className="my-3 rounded-xl overflow-hidden border border-slate-700 shadow-sm">
                     {lang && (
-                        <div className="bg-slate-800 px-3 py-1 text-xs text-cyan-400 font-mono border-b border-slate-700">
+                        <div className="bg-slate-800 px-3 py-1 text-[10px] text-cyan-400 font-bold uppercase tracking-widest border-b border-slate-700">
                             {lang}
                         </div>
                     )}
-                    <pre className="bg-slate-950 p-4 text-xs font-mono text-emerald-300 overflow-x-auto leading-relaxed">
+                    <pre className="bg-slate-950 p-4 text-[12px] font-mono text-emerald-300 overflow-x-auto leading-relaxed custom-scrollbar">
                         {codeLines.join("\n")}
                     </pre>
                 </div>
@@ -111,11 +112,64 @@ function MarkdownRenderer({ content }: { content: string }) {
             continue;
         }
 
+        // Table detection
+        if (line.trim().startsWith("|")) {
+            const tableRows: string[][] = [];
+            let j = i;
+            while (j < lines.length && lines[j].trim().includes("|")) {
+                const rawLine = lines[j].trim();
+                // Split by |, handle cases with/without leading/trailing pipes
+                let cells = rawLine.split("|");
+                // Remove first and last if they are empty (from leading/trailing pipes)
+                if (cells[0] === "") cells.shift();
+                if (cells[cells.length - 1] === "") cells.pop();
+
+                tableRows.push(cells.map(c => c.trim()));
+                j++;
+            }
+
+            if (tableRows.length > 1) {
+                const header = tableRows[0];
+                // Check if the second row is a separator
+                const hasSeparator = tableRows[1]?.every(cell => cell.match(/^-+:?$/) || cell.match(/^:?-+$/) || cell.match(/^:?-+:?$/));
+                const bodyRows = hasSeparator ? tableRows.slice(2) : tableRows.slice(1);
+
+                elements.push(
+                    <div key={i} className="my-4 overflow-x-auto rounded-xl border border-slate-700 bg-slate-900/40 shadow-lg custom-scrollbar">
+                        <table className="w-full text-xs text-left border-collapse min-w-[400px]">
+                            <thead className="bg-slate-800/60 text-cyan-400 font-bold uppercase tracking-tight border-b border-slate-700/50">
+                                <tr>
+                                    {header.map((cell, idx) => (
+                                        <th key={idx} className="px-4 py-3 border-r border-slate-700/30 last:border-0 whitespace-nowrap">
+                                            {inlineFormat(cell)}
+                                        </th>
+                                    ))}
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-800/50">
+                                {bodyRows.map((row, rowIdx) => (
+                                    <tr key={rowIdx} className="hover:bg-indigo-600/5 transition-colors group">
+                                        {row.map((cell, cellIdx) => (
+                                            <td key={cellIdx} className="px-4 py-2.5 text-slate-300 group-hover:text-slate-100 border-r border-slate-800/30 last:border-0 leading-relaxed font-sans">
+                                                {inlineFormat(cell)}
+                                            </td>
+                                        ))}
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                );
+                i = j;
+                continue;
+            }
+        }
+
         // Heading 3
         if (line.startsWith("### ")) {
             elements.push(
-                <h3 key={i} className="text-sm font-bold text-cyan-300 mt-4 mb-1">
-                    {line.slice(4)}
+                <h3 key={i} className="text-sm font-bold text-cyan-300 mt-4 mb-2">
+                    {inlineFormat(line.slice(4))}
                 </h3>
             );
             i++;
@@ -125,8 +179,8 @@ function MarkdownRenderer({ content }: { content: string }) {
         // Heading 2
         if (line.startsWith("## ")) {
             elements.push(
-                <h2 key={i} className="text-base font-bold text-indigo-300 mt-4 mb-1">
-                    {line.slice(3)}
+                <h2 key={i} className="text-base font-bold text-indigo-300 mt-5 mb-2 border-b border-slate-800 pb-1">
+                    {inlineFormat(line.slice(3))}
                 </h2>
             );
             i++;
@@ -136,8 +190,9 @@ function MarkdownRenderer({ content }: { content: string }) {
         // Heading 1
         if (line.startsWith("# ")) {
             elements.push(
-                <h1 key={i} className="text-lg font-bold text-white mt-4 mb-2">
-                    {line.slice(2)}
+                <h1 key={i} className="text-xl font-bold text-white mt-6 mb-3 flex items-center gap-2">
+                    <span className="w-1 h-6 bg-indigo-500 rounded-full"></span>
+                    {inlineFormat(line.slice(2))}
                 </h1>
             );
             i++;
@@ -147,9 +202,9 @@ function MarkdownRenderer({ content }: { content: string }) {
         // Bullet
         if (line.match(/^(\s*)[-*•]\s/)) {
             elements.push(
-                <div key={i} className="flex gap-2 items-start my-0.5">
-                    <span className="text-indigo-400 mt-0.5 flex-shrink-0">•</span>
-                    <span className="text-slate-300 text-sm">{inlineFormat(line.replace(/^(\s*)[-*•]\s/, ""))}</span>
+                <div key={i} className="flex gap-2 items-start my-1 pl-1">
+                    <span className="text-indigo-400 mt-1.5 flex-shrink-0 text-[10px]">●</span>
+                    <span className="text-slate-300 text-[13.5px] leading-relaxed">{inlineFormat(line.replace(/^(\s*)[-*•]\s/, ""))}</span>
                 </div>
             );
             i++;
@@ -160,9 +215,9 @@ function MarkdownRenderer({ content }: { content: string }) {
         if (line.match(/^\d+\.\s/)) {
             const num = line.match(/^(\d+)\./)?.[1];
             elements.push(
-                <div key={i} className="flex gap-2 items-start my-0.5">
-                    <span className="text-indigo-400 font-bold text-sm flex-shrink-0 w-5">{num}.</span>
-                    <span className="text-slate-300 text-sm">{inlineFormat(line.replace(/^\d+\.\s/, ""))}</span>
+                <div key={i} className="flex gap-3 items-start my-1.5 pl-1">
+                    <span className="bg-indigo-500/20 text-indigo-400 font-bold text-[10px] flex items-center justify-center rounded-md w-5 h-5 flex-shrink-0">{num}</span>
+                    <span className="text-slate-300 text-[13.5px] leading-relaxed">{inlineFormat(line.replace(/^\d+\.\s/, ""))}</span>
                 </div>
             );
             i++;
@@ -171,21 +226,21 @@ function MarkdownRenderer({ content }: { content: string }) {
 
         // Horizontal rule
         if (line.match(/^---+$/)) {
-            elements.push(<hr key={i} className="border-slate-700 my-3" />);
+            elements.push(<hr key={i} className="border-slate-800 my-4" />);
             i++;
             continue;
         }
 
         // Empty line
         if (line.trim() === "") {
-            elements.push(<div key={i} className="h-2" />);
+            elements.push(<div key={i} className="h-3" />);
             i++;
             continue;
         }
 
         // Paragraph
         elements.push(
-            <p key={i} className="text-slate-300 text-sm leading-relaxed">
+            <p key={i} className="text-slate-300 text-[13.5px] leading-relaxed mb-1 font-sans">
                 {inlineFormat(line)}
             </p>
         );
@@ -196,9 +251,9 @@ function MarkdownRenderer({ content }: { content: string }) {
 }
 
 function inlineFormat(text: string): React.ReactNode {
-    // Bold + code inline
+    // Bold + Italics + Code + Links inline
     const parts: React.ReactNode[] = [];
-    const regex = /(`[^`]+`|\*\*[^*]+\*\*)/g;
+    const regex = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|\[[^\]]+\]\([^)]+\))/g;
     let last = 0;
     let match: RegExpExecArray | null;
     let key = 0;
@@ -210,16 +265,37 @@ function inlineFormat(text: string): React.ReactNode {
         const token = match[0];
         if (token.startsWith("`")) {
             parts.push(
-                <code key={key++} className="bg-slate-800 text-cyan-300 px-1 rounded text-xs font-mono">
+                <code key={key++} className="bg-slate-800 text-cyan-300 px-1 rounded text-[11px] font-mono">
                     {token.slice(1, -1)}
                 </code>
             );
-        } else {
+        } else if (token.startsWith("**")) {
             parts.push(
-                <strong key={key++} className="text-white font-semibold">
+                <strong key={key++} className="text-white font-bold">
                     {token.slice(2, -2)}
                 </strong>
             );
+        } else if (token.startsWith("*")) {
+            parts.push(
+                <em key={key++} className="text-slate-200 italic">
+                    {token.slice(1, -1)}
+                </em>
+            );
+        } else if (token.startsWith("[")) {
+            const linkMatch = token.match(/\[([^\]]+)\]\(([^)]+)\)/);
+            if (linkMatch) {
+                parts.push(
+                    <a
+                        key={key++}
+                        href={linkMatch[2]}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-indigo-400 hover:text-indigo-300 underline underline-offset-2 transition-colors"
+                    >
+                        {linkMatch[1]}
+                    </a>
+                );
+            }
         }
         last = match.index + token.length;
     }
@@ -337,7 +413,7 @@ function VoiceBadge({ lang, status }: { lang?: string; status: "idle" | "recordi
 export default function MonitoringPage() {
     const [projects, setProjects] = useState<Project[]>([]);
     const [selectedProject, setSelectedProject] = useState<Project | null>(null);
-    const [activeTab, setActiveTab] = useState<"chat" | "logs" | "files">("chat");
+    const [activeTab, setActiveTab] = useState<"chat" | "logs" | "files" | "dashboard">("chat");
     const [logs, setLogs] = useState<LogLine[]>([]);
     const [files, setFiles] = useState<{ file_path: string }[]>([]);
     const [selectedFile, setSelectedFile] = useState<string | null>(null);
@@ -794,6 +870,7 @@ export default function MonitoringPage() {
                             {[
                                 { id: "chat", icon: MessageSquare, label: "AI Chat" },
                                 { id: "logs", icon: Terminal, label: "Live Logs" },
+                                { id: "dashboard", icon: Activity, label: "Dashboard" },
                                 { id: "files", icon: FileCode, label: "File Viewer" },
                             ].map((tab) => (
                                 <button
@@ -1002,6 +1079,11 @@ export default function MonitoringPage() {
                                     </p>
                                 </div>
                             </div>
+                        )}
+
+                        {/* ── Dashboard Tab ── */}
+                        {activeTab === "dashboard" && selectedProject && (
+                            <DashboardTab project={selectedProject} logs={logs} />
                         )}
 
                         {/* ── Logs Tab ── */}

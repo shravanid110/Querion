@@ -94,8 +94,14 @@ export const ChatInterface = ({ onSearch, isThinking = false, generatedSql, expl
                         className="overflow-hidden space-y-2"
                     >
                         {explanation && (
-                            <div className="bg-indigo-50 border border-indigo-100 text-indigo-700 p-4 rounded-lg text-sm">
-                                <span className="font-semibold">AI Analysis: </span>{explanation}
+                            <div className="bg-white border border-indigo-100 rounded-xl shadow-sm overflow-hidden">
+                                <div className="px-4 py-2 bg-indigo-50/50 border-b border-indigo-100 flex items-center gap-2">
+                                    <Sparkles size={14} className="text-indigo-600" />
+                                    <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider">Detailed Analysis</span>
+                                </div>
+                                <div className="p-4 max-h-[300px] overflow-y-auto custom-scrollbar text-sm text-gray-700 leading-relaxed whitespace-pre-wrap font-sans">
+                                    {explanation}
+                                </div>
                             </div>
                         )}
 

@@ -1,5 +1,6 @@
 # Mapping: backend/src/services/mysqlExecutor.ts
 import mysql.connector
+import re
 from typing import Dict, Any, List, Optional
 
 class MySQLService:
@@ -27,18 +28,12 @@ class MySQLService:
 
     @staticmethod
     def execute_read_only_query(params: Dict[str, Any], sql: str) -> Dict[str, Any]:
-        # Basic safety check for READ ONLY
-        forbidden_keywords = ['DELETE', 'DROP', 'UPDATE', 'INSERT', 'ALTER', 'TRUNCATE', 'CREATE', 'GRANT', 'REVOKE']
+        # Rule 3: Read-Only Enforcement
+        forbidden_keywords = ['INSERT', 'UPDATE', 'DELETE', 'CREATE', 'DROP', 'ALTER', 'TRUNCATE', 'GRANT', 'REVOKE', 'REPLACE', 'RENAME']
         uppercase_sql = sql.strip().upper()
 
-        is_destructive = any(keyword in uppercase_sql for keyword in forbidden_keywords)
-        is_destructive = is_destructive or any(
-            uppercase_sql.startswith(k) or f" {k} " in uppercase_sql 
-            for k in forbidden_keywords
-        )
-
-        if is_destructive:
-            raise Exception("Security Alert: Only SELECT queries are allowed.")
+        if any(re.search(rf'\b{kw}\b', uppercase_sql) for kw in forbidden_keywords):
+            raise Exception("Database modifications are not allowed. This dashboard is strictly read-only; you can only query and view existing data.")
 
         connection = None
         try:

@@ -6,6 +6,7 @@ import redis.asyncio as redis
 from app.monitoring.schemas import LogMessage
 from app.monitoring.agents.monitoring_agent import MonitoringAgent
 from app.config import settings
+from app.services.log_chart_mapper import analyze_log_and_assign_chart, explain_log_issue
 
 logger = structlog.get_logger()
 router = APIRouter()
@@ -75,6 +76,21 @@ async def websocket_endpoint(websocket: WebSocket):
             except Exception as re:
                 logger.error("redis_publish_error", error=str(re))
             
+            # ── Log Mapping & AI Analysis ───────────────────────────────────
+            try:
+                chart_mapping = analyze_log_and_assign_chart(message_json)
+                explanation = explain_log_issue(message_json)
+                
+                # Broadcast mapped chart to frontend
+                await manager.broadcast_to_user(user_id, {
+                    "type": "mapped_chart",
+                    "log": message_json,
+                    "mapping": chart_mapping,
+                    "ai": explanation
+                })
+            except Exception as mapping_err:
+                logger.error("mapping_error", error=str(mapping_err))
+
             # If error detected, trigger agent
             if log.type == "error" or (log.status_code and log.status_code >= 500):
                 ag = get_agent()
