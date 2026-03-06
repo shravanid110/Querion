@@ -11,9 +11,9 @@ class SeverityDetector:
 
     @staticmethod
     def detect(log: Dict[str, Any]) -> str:
-        level = log.get("level", "INFO").upper()
+        level = (log.get("level") or log.get("type") or "INFO").upper()
         status_code = log.get("status_code")
-        message = log.get("message", "").lower()
+        message = (log.get("message") or log.get("data") or "").lower()
 
         if level == "ERROR" or (status_code and str(status_code).startswith("5")):
             return SeverityDetector.CRITICAL
@@ -54,173 +54,149 @@ class ChartMapper:
 
     @staticmethod
     def map_log_to_chart(log: Dict[str, Any]) -> Dict[str, str]:
-        message = log.get("message", "").lower()
-        service = log.get("service", "").lower()
+        message = (log.get("message") or log.get("data") or "").lower()
+        service = (log.get("service") or "").lower()
         status_code = str(log.get("status_code", ""))
         
-        # SYSTEM HEALTH
-        if "cpu" in message:
-            return {
-                "chart_type": "cpuGaugeRed" if "overload" in message or "high" in message else "radialGauge",
-                "panel": "SYSTEM_HEALTH",
-                "title": "CPU Utilization",
-                "metric_type": "utilization"
-            }
-        if "ram" in message or "memory" in message:
-            return {
-                "chart_type": "ramRingRed" if "overflow" in message or "leak" in message else "ring",
-                "panel": "SYSTEM_HEALTH",
-                "title": "Memory Usage",
-                "metric_type": "utilization"
-            }
-        if "disk" in message or "storage" in message:
-            return {
-                "chart_type": "gauge",
-                "panel": "SYSTEM_HEALTH",
-                "title": "Disk Usage",
-                "metric_type": "utilization"
-            }
-        if "uptime" in message or "started" in message:
-            return {
-                "chart_type": "counter",
-                "panel": "SYSTEM_HEALTH",
-                "title": "Server Uptime",
-                "metric_type": "uptime"
-            }
-        if "threads" in message or "processes" in message:
-            return {
-                "chart_type": "lineChart",
-                "panel": "SYSTEM_HEALTH",
-                "title": "Active Processes",
-                "metric_type": "process_count"
-            }
-
-        # API MONITORING
-        if "requests per second" in message or "rps" in message:
-            return {
-                "chart_type": "lineChart",
-                "panel": "API_MONITORING",
-                "title": "Requests Per Second",
-                "metric_type": "traffic"
-            }
-        if "latency" in message or "response time" in message:
-            return {
-                "chart_type": "lineChart",
-                "panel": "API_MONITORING",
-                "title": "API Latency",
-                "metric_type": "performance"
-            }
-        if "error rate" in message:
-            return {
-                "chart_type": "ringChart",
-                "panel": "API_MONITORING",
-                "title": "Error Rate %",
-                "metric_type": "reliability"
-            }
-        if "status" in message and ("distribution" in message or "code" in message):
-            return {
-                "chart_type": "donutChart",
-                "panel": "API_MONITORING",
-                "title": "HTTP Status Distribution",
-                "metric_type": "traffic_split"
-            }
-        if "top endpoints" in message or "most requested" in message:
-            return {
-                "chart_type": "horizontalBarChart",
-                "panel": "API_MONITORING",
-                "title": "Top Endpoints",
-                "metric_type": "traffic_rank"
-            }
-            
-        # DATABASE MONITORING
-        if "db connections" in message or "database connection" in message:
-            return {
-                "chart_type": "gauge",
-                "panel": "DATABASE_MONITORING",
-                "title": "Active DB Connections",
-                "metric_type": "connections"
-            }
-        if "query execution" in message or "sql execution" in message:
-            return {
-                "chart_type": "lineChart",
-                "panel": "DATABASE_MONITORING",
-                "title": "Query Performance",
-                "metric_type": "db_performance"
-            }
-        if "slow query" in message or "long running query" in message:
-            return {
-                "chart_type": "liveTable",
-                "panel": "DATABASE_MONITORING",
-                "title": "Slow Queries",
-                "metric_type": "performance_issues"
-            }
-        if "deadlock" in message:
-            return {
-                "chart_type": "counter",
-                "panel": "DATABASE_MONITORING",
-                "title": "DB Deadlocks",
-                "metric_type": "critical_events"
-            }
-
-        # SPECIFIC ERRORS (Mapping 50+ list summary)
+        # ── DATABASE & PERFORMANCE ──
+        if "db timeout" in message or "database timeout" in message:
+            return {"chart_type": "gauge", "panel": "DATABASE_MONITORING", "title": "DB Timeout", "metric_type": "connection"}
+        if "slow query" in message or "slow sql" in message:
+            return {"chart_type": "line", "panel": "DATABASE_MONITORING", "title": "DB Slow Query", "metric_type": "performance"}
         if "duplicate key" in message:
-            return {"chart_type": "table", "panel": "ERROR_TRACKING", "title": "Duplicate Key Errors", "metric_type": "db_error"}
-        if "foreign key" in message:
-            return {"chart_type": "pieChart", "panel": "ERROR_TRACKING", "title": "Foreign Key Violations", "metric_type": "db_error"}
-        if "timeout" in message:
-            if "db" in message or "database" in message:
-                return {"chart_type": "ringChart", "panel": "ERROR_TRACKING", "title": "DB Timeouts", "metric_type": "health"}
-            return {"chart_type": "lineChart", "panel": "ERROR_TRACKING", "title": "Network Timeouts", "metric_type": "network"}
-        if "rollback" in message:
-            return {"chart_type": "barChart", "panel": "ERROR_TRACKING", "title": "Transaction Rollbacks", "metric_type": "db_error"}
-        if "table not found" in message:
-            return {"chart_type": "logStream", "panel": "ERROR_TRACKING", "title": "Schema Errors", "metric_type": "db_error"}
-            
-        # AUTH ERRORS
-        if "jwt" in message or "token" in message:
-            if "invalid" in message:
-                return {"chart_type": "pieChart", "panel": "AUTH_ERRORS", "title": "Invalid JWTs", "metric_type": "security"}
-            if "expired" in message:
-                return {"chart_type": "lineChart", "panel": "AUTH_ERRORS", "title": "Expired Sessions", "metric_type": "security"}
-        if "unauthorized" in message or "forbidden" in message or "role" in message:
-            return {"chart_type": "barChart", "panel": "AUTH_ERRORS", "title": "Permission Denied", "metric_type": "security"}
-        if "csrf" in message:
-            return {"chart_type": "counter", "panel": "AUTH_ERRORS", "title": "CSRF Mismatches", "metric_type": "security"}
+            return {"chart_type": "table", "panel": "DATABASE_MONITORING", "title": "Duplicate Key Error", "metric_type": "integrity"}
+        if "deadlock" in message:
+            if "thread" in message:
+                return {"chart_type": "counter", "panel": "SYSTEM_HEALTH", "title": "Thread Deadlock", "metric_type": "concurrency"}
+            return {"chart_type": "counter", "panel": "DATABASE_MONITORING", "title": "Transaction Deadlock", "metric_type": "concurrency"}
+        if "schema mismatch" in message or "table not found" in message:
+            return {"chart_type": "table", "panel": "DATABASE_MONITORING", "title": "DB Schema Mismatch", "metric_type": "validation"}
+        if "migration" in message and ("fail" in message or "error" in message):
+            return {"chart_type": "counter", "panel": "DATABASE_MONITORING", "title": "Migration Failure", "metric_type": "deployment"}
+        if "redis" in message and ("fail" in message or "down" in message):
+            return {"chart_type": "gauge", "panel": "DATABASE_MONITORING", "title": "Redis Connection", "metric_type": "cache"}
+        if "cache overflow" in message:
+            return {"chart_type": "ring", "panel": "DATABASE_MONITORING", "title": "Cache Overflow", "metric_type": "memory"}
+        if "cache connection" in message and ("fail" in message or "error" in message):
+            return {"chart_type": "gauge", "panel": "DATABASE_MONITORING", "title": "Cache Conn Fail", "metric_type": "availability"}
 
-        # API STATUS ERRORS
-        if status_code == "400":
-            return {"chart_type": "barChart", "panel": "API_ERRORS", "title": "400 Bad Requests", "metric_type": "http_error"}
-        if status_code == "401":
-            return {"chart_type": "pieChart", "panel": "API_ERRORS", "title": "401 Unauthorized", "metric_type": "http_error"}
-        if status_code == "404":
-            return {"chart_type": "horizontalBarChart", "panel": "API_ERRORS", "title": "404 Not Found", "metric_type": "http_error"}
-        if status_code == "429":
-            return {"chart_type": "spikeLine", "panel": "API_ERRORS", "title": "Rate Limits (429)", "metric_type": "traffic_limit"}
-        if status_code == "500":
-            return {"chart_type": "flashingCounter", "panel": "API_ERRORS", "title": "500 Internal Errors", "metric_type": "critical"}
-        if status_code == "503":
-            return {"chart_type": "criticalAlertPanel", "panel": "API_ERRORS", "title": "Service Unavailable", "metric_type": "outage"}
-
-        # SERVER/LOGIC ERRORS
-        if "null pointer" in message or "npe" in message:
-            return {"chart_type": "errorTable", "panel": "APP_ERRORS", "title": "Null Pointer Exceptions", "metric_type": "code_bug"}
-        if "division by zero" in message:
-            return {"chart_type": "stackTraceViewer", "panel": "APP_ERRORS", "title": "Arithmetic Errors", "metric_type": "code_bug"}
-        if "redis" in message:
-            return {"chart_type": "redisRing", "panel": "APP_ERRORS", "title": "Redis Cache Health", "metric_type": "infra"}
-        if "ssl" in message and "expired" in message:
-            return {"chart_type": "criticalBadge", "panel": "SERVER_ERRORS", "title": "SSL Expiration", "metric_type": "security"}
-        if "dns" in message and "fail" in message:
-            return {"chart_type": "timelineGraph", "panel": "SERVER_ERRORS", "title": "DNS Failures", "metric_type": "network"}
-
-        # SECURITY
+        # ── AUTH & SECURITY ──
+        if "auth failure" in message or "login fail" in message:
+            return {"chart_type": "pie", "panel": "SECURITY", "title": "Auth Failure", "metric_type": "access"}
+        if "expired token" in message or "jwt expired" in message:
+            return {"chart_type": "line", "panel": "SECURITY", "title": "Expired Token", "metric_type": "session"}
+        if "role denied" in message or "permission denied" in message:
+            return {"chart_type": "bar", "panel": "SECURITY", "title": "Role Denied", "metric_type": "authorization"}
+        if "session expired" in message:
+            return {"chart_type": "pie", "panel": "SECURITY", "title": "Session Expired", "metric_type": "session"}
+        if "oauth" in message and ("fail" in message or "error" in message):
+            return {"chart_type": "pie", "panel": "SECURITY", "title": "OAuth Failure", "metric_type": "external_auth"}
         if "sql injection" in message:
-            return {"chart_type": "securityTable", "panel": "SECURITY", "title": "SQLi Attempts", "metric_type": "attack"}
+            return {"chart_type": "securityTable", "panel": "SECURITY", "title": "SQL Injection Attempt", "metric_type": "exploit"}
         if "brute force" in message:
-            return {"chart_type": "lineChart", "panel": "SECURITY", "title": "Brute Force Pattern", "metric_type": "attack"}
+            return {"chart_type": "line", "panel": "SECURITY", "title": "Brute Force Detection", "metric_type": "attack"}
+        if "token tampering" in message or "signature mismatch" in message:
+            return {"chart_type": "securityBar", "panel": "SECURITY", "title": "Token Tampering", "metric_type": "integrity"}
+        if "unauthorized" in message and "access" in message:
+            return {"chart_type": "bar", "panel": "SECURITY", "title": "Unauthorized Access", "metric_type": "access"}
+        if "ssl" in message and "expired" in message:
+            return {"chart_type": "badge", "panel": "SECURITY", "title": "SSL Expired", "metric_type": "certificate"}
+
+        # ── API & TRAFFIC ──
+        if status_code == "400" or "bad request" in message:
+            return {"chart_type": "bar", "panel": "API_TRAFFIC", "title": "Bad Request (400)", "metric_type": "http_error"}
+        if status_code == "500" or "internal error" in message:
+            return {"chart_type": "counter", "panel": "API_TRAFFIC", "title": "Internal Error", "metric_type": "http_error"}
+        if status_code == "503" or "service unavailable" in message:
+            return {"chart_type": "alertPanel", "panel": "API_TRAFFIC", "title": "Service Unavailable", "metric_type": "availability"}
+        if status_code == "429" or "rate limit" in message:
+            return {"chart_type": "line", "panel": "API_TRAFFIC", "title": "Rate Limited", "metric_type": "throughput"}
+        if "slow endpoint" in message or "latency" in message:
+            return {"chart_type": "line", "panel": "API_TRAFFIC", "title": "Slow Endpoint", "metric_type": "latency"}
+        if "rps" in message or "high rps" in message:
+            return {"chart_type": "line", "panel": "API_TRAFFIC", "title": "High RPS Traffic", "metric_type": "volume"}
+        if "user spike" in message:
+            return {"chart_type": "line", "panel": "API_TRAFFIC", "title": "User Spike", "metric_type": "engagement"}
+        if "traffic spike" in message:
+            return {"chart_type": "line", "panel": "API_TRAFFIC", "title": "Traffic Spike", "metric_type": "load"}
+        if "imbalance" in message:
+            return {"chart_type": "bar", "panel": "API_TRAFFIC", "title": "Load Imbalance", "metric_type": "distribution"}
+        if "invalid method" in message:
+            return {"chart_type": "bar", "panel": "API_TRAFFIC", "title": "Invalid Method", "metric_type": "http_bad"}
+        if "payload too large" in message or status_code == "413":
+            return {"chart_type": "table", "panel": "API_TRAFFIC", "title": "Payload Too Large", "metric_type": "http_bad"}
+        if "unsupported type" in message or status_code == "415":
+            return {"chart_type": "table", "panel": "API_TRAFFIC", "title": "Unsupported Media", "metric_type": "http_bad"}
+
+        # ── SYSTEM & INFRA ──
+        if "cpu overload" in message:
+            return {"chart_type": "ring", "panel": "SYSTEM_HEALTH", "title": "CPU Overload", "metric_type": "usage"}
+        if "memory leak" in message:
+            return {"chart_type": "ring", "panel": "SYSTEM_HEALTH", "title": "Memory Leak", "metric_type": "usage"}
+        if "disk full" in message or "disk space" in message:
+            return {"chart_type": "gauge", "panel": "SYSTEM_HEALTH", "title": "Disk Full", "metric_type": "usage"}
+        if "docker" in message and "crash" in message:
+            return {"chart_type": "counter", "panel": "SYSTEM_HEALTH", "title": "Docker Container Crash", "metric_type": "restart"}
+        if "container restart" in message:
+            return {"chart_type": "counter", "panel": "SYSTEM_HEALTH", "title": "Container Restart", "metric_type": "restart"}
+        if "threads" in message and "exhaust" in message:
+            return {"chart_type": "line", "panel": "SYSTEM_HEALTH", "title": "Thread Exhaustion", "metric_type": "threads"}
+        if "dns" in message and "fail" in message:
+            return {"chart_type": "timeline", "panel": "SYSTEM_HEALTH", "title": "DNS Failure", "metric_type": "network"}
+        if "network timeout" in message:
+            return {"chart_type": "line", "panel": "SYSTEM_HEALTH", "title": "Network Timeout", "metric_type": "network"}
+        if "queue overflow" in message:
+            return {"chart_type": "gauge", "panel": "SYSTEM_HEALTH", "title": "Queue Overflow", "metric_type": "load"}
+        if "service restart" in message:
+            return {"chart_type": "counter", "panel": "SYSTEM_HEALTH", "title": "Service Restart", "metric_type": "lifecycle"}
+
+        # ── ERRORS & EXCEPTIONS ──
+        if "file corrupt" in message:
+            return {"chart_type": "table", "panel": "APPLICATION_LOGS", "title": "File Corrupt", "metric_type": "io_error"}
+        if "null pointer" in message or "npe" in message:
+            return {"chart_type": "logViewer", "panel": "APPLICATION_LOGS", "title": "Null Pointer", "metric_type": "runtime_error"}
+        if "division by zero" in message:
+            return {"chart_type": "stackTrace", "panel": "APPLICATION_LOGS", "title": "Division by Zero", "metric_type": "runtime_error"}
+        if "invalid input" in message:
+            return {"chart_type": "table", "panel": "APPLICATION_LOGS", "title": "Invalid Input", "metric_type": "logic_error"}
+        if "json parse" in message:
+            return {"chart_type": "table", "panel": "APPLICATION_LOGS", "title": "JSON Parse Error", "metric_type": "format_error"}
+        if "timeout exception" in message:
+            return {"chart_type": "table", "panel": "APPLICATION_LOGS", "title": "Timeout Exception", "metric_type": "runtime_error"}
+        if "unknown exception" in message or "unexpected error" in message:
+            return {"chart_type": "logConsole", "panel": "APPLICATION_LOGS", "title": "Unknown Exception", "metric_type": "runtime_error"}
+        if "config error" in message:
+            return {"chart_type": "logViewer", "panel": "APPLICATION_LOGS", "title": "Config Error", "metric_type": "env_error"}
+        if "environment variable" in message and "missing" in message:
+            return {"chart_type": "logViewer", "panel": "APPLICATION_LOGS", "title": "Env Var Missing", "metric_type": "env_error"}
+        if "high error rate" in message:
+            return {"chart_type": "ring", "panel": "APPLICATION_LOGS", "title": "High Error Rate", "metric_type": "health_score"}
+
+        # ── EXTERNAL & JOBS ──
+        if "ai api" in message and "fail" in message:
+            return {"chart_type": "counter", "panel": "EXTERNAL_SERVICES", "title": "AI API Failure", "metric_type": "third_party"}
+        if "payment" in message and "timeout" in message:
+            return {"chart_type": "pie", "panel": "EXTERNAL_SERVICES", "title": "Payment Timeout", "metric_type": "third_party"}
+        if "webhook" in message:
+            if "retry" in message:
+                return {"chart_type": "counter", "panel": "EXTERNAL_SERVICES", "title": "Webhook Retry Fail", "metric_type": "outbound"}
+            return {"chart_type": "line", "panel": "EXTERNAL_SERVICES", "title": "Webhook Failure", "metric_type": "outbound"}
+        if "cron failure" in message:
+            return {"chart_type": "counter", "panel": "EXTERNAL_SERVICES", "title": "Cron Failure", "metric_type": "scheduler"}
+        if "background job" in message:
+            if "stuck" in message:
+                return {"chart_type": "counter", "panel": "EXTERNAL_SERVICES", "title": "Background Job Stuck", "metric_type": "workers"}
+            if "crash" in message:
+                return {"chart_type": "counter", "panel": "EXTERNAL_SERVICES", "title": "Background Job Crash", "metric_type": "workers"}
 
         # DEFAULT / RANDOM for non-matching
-        random_charts = ["barChart", "lineChart", "pieChart", "counter", "gauge"]
+        random_charts = ["bar", "line", "pie", "counter", "gauge"]
+        return {
+            "chart_type": random.choice(random_charts),
+            "panel": "GENERIC_MONITORING",
+            "title": "Log Activity Trend",
+            "metric_type": "general_metric"
+        }
         return {
             "chart_type": random.choice(random_charts),
             "panel": "GENERIC_MONITORING",
@@ -233,8 +209,8 @@ class AIInsightGenerator:
     
     @staticmethod
     def get_explanation(log: Dict[str, Any]) -> Dict[str, str]:
-        message = log.get("message", "").lower()
-        level = log.get("level", "INFO").upper()
+        message = (log.get("message") or log.get("data") or "").lower()
+        level = (log.get("level") or log.get("type") or "INFO").upper()
         status_code = str(log.get("status_code", ""))
         
         # Logic for patterns

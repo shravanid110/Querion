@@ -19,7 +19,17 @@ class Connection(Base):
     password = Column(String(1024), nullable=False) # Encrypted
     createdAt = Column(DateTime, default=datetime.datetime.utcnow)
 
-engine = create_engine(settings.DATABASE_URL, connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {})
+engine_args = {
+    "connect_args": {"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {},
+    "pool_pre_ping": True
+}
+
+# Only add pool_size if not using SQLite (which uses NullPool/StaticPool)
+if "sqlite" not in settings.DATABASE_URL:
+    engine_args["pool_size"] = 20
+    engine_args["max_overflow"] = 30
+
+engine = create_engine(settings.DATABASE_URL, **engine_args)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def get_db():

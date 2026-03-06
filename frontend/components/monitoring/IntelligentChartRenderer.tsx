@@ -42,57 +42,77 @@ interface MappedChart {
 
 // 60+ Backend Scenarios Mapping
 const INITIAL_SCENARIOS: MappedChart[] = [
-    // --- SYSTEM HEALTH ---
-    { id: 'cpu_usage', title: 'CPU Utilization', chart_type: 'radialGauge', panel: 'SYSTEM_HEALTH', severity: 'HEALTHY', color: 'green', metric_type: 'usage', description: '', visualization: '' },
-    { id: 'ram_usage', title: 'RAM Allocation', chart_type: 'ring', panel: 'SYSTEM_HEALTH', severity: 'HEALTHY', color: 'green', metric_type: 'usage', description: '', visualization: '' },
-    { id: 'disk_usage', title: 'Disk Capacity', chart_type: 'gauge', panel: 'SYSTEM_HEALTH', severity: 'HEALTHY', color: 'green', metric_type: 'usage', description: '', visualization: '' },
-    { id: 'server_uptime', title: 'Server Uptime', chart_type: 'counter', panel: 'SYSTEM_HEALTH', severity: 'HEALTHY', color: 'green', metric_type: 'temporal', description: '', visualization: '' },
-    { id: 'active_threads', title: 'Active Threads', chart_type: 'lineChart', panel: 'SYSTEM_HEALTH', severity: 'HEALTHY', color: 'green', metric_type: 'processes', description: '', visualization: '' },
+    // --- DATABASE & PERFORMANCE ---
+    { id: 'db_timeout', title: 'DB Timeout', chart_type: 'gauge', panel: 'DATABASE_MONITORING', severity: 'HEALTHY', color: 'green', metric_type: 'connection', description: '', visualization: '' },
+    { id: 'db_slow_query', title: 'DB Slow Query', chart_type: 'line', panel: 'DATABASE_MONITORING', severity: 'HEALTHY', color: 'green', metric_type: 'performance', description: '', visualization: '' },
+    { id: 'db_duplicate', title: 'Duplicate Key Error', chart_type: 'table', panel: 'DATABASE_MONITORING', severity: 'HEALTHY', color: 'green', metric_type: 'integrity', description: '', visualization: '' },
+    { id: 'db_deadlocks', title: 'Transaction Deadlock', chart_type: 'counter', panel: 'DATABASE_MONITORING', severity: 'HEALTHY', color: 'green', metric_type: 'concurrency', description: '', visualization: '' },
+    { id: 'db_schema_err', title: 'DB Schema Mismatch', chart_type: 'table', panel: 'DATABASE_MONITORING', severity: 'HEALTHY', color: 'green', metric_type: 'validation', description: '', visualization: '' },
+    { id: 'db_migration_fail', title: 'Migration Failure', chart_type: 'counter', panel: 'DATABASE_MONITORING', severity: 'HEALTHY', color: 'green', metric_type: 'deployment', description: '', visualization: '' },
+    { id: 'redis_fail', title: 'Redis Connection', chart_type: 'gauge', panel: 'DATABASE_MONITORING', severity: 'HEALTHY', color: 'green', metric_type: 'cache', description: '', visualization: '' },
+    { id: 'cache_overflow', title: 'Cache Overflow', chart_type: 'ring', panel: 'DATABASE_MONITORING', severity: 'HEALTHY', color: 'green', metric_type: 'memory', description: '', visualization: '' },
+    { id: 'cache_conn_fail', title: 'Cache Conn Fail', chart_type: 'gauge', panel: 'DATABASE_MONITORING', severity: 'HEALTHY', color: 'green', metric_type: 'availability', description: '', visualization: '' },
 
-    // --- API MONITORING ---
-    { id: 'req_per_sec', title: 'Requests per Sec', chart_type: 'lineChart', panel: 'API_MONITORING', severity: 'HEALTHY', color: 'green', metric_type: 'traffic', description: '', visualization: '' },
-    { id: 'api_latency', title: 'API Response Time', chart_type: 'lineChart', panel: 'API_MONITORING', severity: 'HEALTHY', color: 'green', metric_type: 'latency', description: '', visualization: '' },
-    { id: 'error_rate', title: 'Error Rate %', chart_type: 'ringChart', panel: 'API_MONITORING', severity: 'HEALTHY', color: 'green', metric_type: 'percentage', description: '', visualization: '' },
-    { id: 'status_dist', title: 'Status Codes', chart_type: 'donutChart', panel: 'API_MONITORING', severity: 'HEALTHY', color: 'green', metric_type: 'distribution', description: '', visualization: '' },
-    { id: 'top_endpoints', title: 'Top Endpoints', chart_type: 'horizontalBarChart', panel: 'API_MONITORING', severity: 'HEALTHY', color: 'blue', metric_type: 'performance', description: '', visualization: '' },
+    // --- AUTH & SECURITY ---
+    { id: 'auth_fail', title: 'Auth Failure', chart_type: 'pie', panel: 'SECURITY', severity: 'HEALTHY', color: 'green', metric_type: 'access', description: '', visualization: '' },
+    { id: 'auth_expired', title: 'Expired Token', chart_type: 'line', panel: 'SECURITY', severity: 'HEALTHY', color: 'green', metric_type: 'session', description: '', visualization: '' },
+    { id: 'auth_denied', title: 'Role Denied', chart_type: 'bar', panel: 'SECURITY', severity: 'HEALTHY', color: 'green', metric_type: 'authorization', description: '', visualization: '' },
+    { id: 'auth_session_exp', title: 'Session Expired', chart_type: 'pie', panel: 'SECURITY', severity: 'HEALTHY', color: 'green', metric_type: 'session', description: '', visualization: '' },
+    { id: 'auth_oauth_fail', title: 'OAuth Failure', chart_type: 'pie', panel: 'SECURITY', severity: 'HEALTHY', color: 'green', metric_type: 'external_auth', description: '', visualization: '' },
+    { id: 'sec_sqli', title: 'SQL Injection Attempt', chart_type: 'securityTable', panel: 'SECURITY', severity: 'HEALTHY', color: 'green', metric_type: 'exploit', description: '', visualization: '' },
+    { id: 'sec_brute', title: 'Brute Force Detection', chart_type: 'line', panel: 'SECURITY', severity: 'HEALTHY', color: 'green', metric_type: 'attack', description: '', visualization: '' },
+    { id: 'sec_tamper', title: 'Token Tampering', chart_type: 'securityBar', panel: 'SECURITY', severity: 'HEALTHY', color: 'green', metric_type: 'integrity', description: '', visualization: '' },
+    { id: 'sec_unauthorized', title: 'Unauthorized Access', chart_type: 'bar', panel: 'SECURITY', severity: 'HEALTHY', color: 'green', metric_type: 'access', description: '', visualization: '' },
+    { id: 'sec_ssl_exp', title: 'SSL Expired', chart_type: 'badge', panel: 'SECURITY', severity: 'HEALTHY', color: 'green', metric_type: 'certificate', description: '', visualization: '' },
 
-    // --- DATABASE MONITORING ---
-    { id: 'db_conns', title: 'Active Connections', chart_type: 'gauge', panel: 'DATABASE_MONITORING', severity: 'HEALTHY', color: 'green', metric_type: 'pool', description: '', visualization: '' },
-    { id: 'db_query_time', title: 'Query Exec Time', chart_type: 'lineChart', panel: 'DATABASE_MONITORING', severity: 'HEALTHY', color: 'green', metric_type: 'performance', description: '', visualization: '' },
-    { id: 'slow_queries', title: 'Slow SQL Logger', chart_type: 'liveTable', panel: 'DATABASE_MONITORING', severity: 'HEALTHY', color: 'yellow', metric_type: 'logs', description: '', visualization: '' },
-    { id: 'db_deadlocks', title: 'Transaction Deadlocks', chart_type: 'counter', panel: 'DATABASE_MONITORING', severity: 'HEALTHY', color: 'green', metric_type: 'alerts', description: '', visualization: '' },
+    // --- API & TRAFFIC ---
+    { id: 'api_400', title: 'Bad Request (400)', chart_type: 'bar', panel: 'API_TRAFFIC', severity: 'HEALTHY', color: 'green', metric_type: 'http_error', description: '', visualization: '' },
+    { id: 'api_500', title: 'Internal Error', chart_type: 'counter', panel: 'API_TRAFFIC', severity: 'HEALTHY', color: 'green', metric_type: 'http_error', description: '', visualization: '' },
+    { id: 'api_503', title: 'Service Unavailable', chart_type: 'alertPanel', panel: 'API_TRAFFIC', severity: 'HEALTHY', color: 'green', metric_type: 'availability', description: '', visualization: '' },
+    { id: 'api_429', title: 'Rate Limited', chart_type: 'line', panel: 'API_TRAFFIC', severity: 'HEALTHY', color: 'green', metric_type: 'throughput', description: '', visualization: '' },
+    { id: 'api_slow_end', title: 'Slow Endpoint', chart_type: 'line', panel: 'API_TRAFFIC', severity: 'HEALTHY', color: 'green', metric_type: 'latency', description: '', visualization: '' },
+    { id: 'api_high_rps', title: 'High RPS Traffic', chart_type: 'line', panel: 'API_TRAFFIC', severity: 'HEALTHY', color: 'green', metric_type: 'volume', description: '', visualization: '' },
+    { id: 'api_user_spike', title: 'User Spike', chart_type: 'line', panel: 'API_TRAFFIC', severity: 'HEALTHY', color: 'green', metric_type: 'engagement', description: '', visualization: '' },
+    { id: 'api_traffic_spike', title: 'Traffic Spike', chart_type: 'line', panel: 'API_TRAFFIC', severity: 'HEALTHY', color: 'green', metric_type: 'load', description: '', visualization: '' },
+    { id: 'api_imbalance', title: 'Load Imbalance', chart_type: 'bar', panel: 'API_TRAFFIC', severity: 'HEALTHY', color: 'green', metric_type: 'distribution', description: '', visualization: '' },
+    { id: 'api_method_inv', title: 'Invalid Method', chart_type: 'bar', panel: 'API_TRAFFIC', severity: 'HEALTHY', color: 'green', metric_type: 'http_bad', description: '', visualization: '' },
+    { id: 'api_payload_large', title: 'Payload Too Large', chart_type: 'table', panel: 'API_TRAFFIC', severity: 'HEALTHY', color: 'green', metric_type: 'http_bad', description: '', visualization: '' },
+    { id: 'api_unsupp_type', title: 'Unsupported Media', chart_type: 'table', panel: 'API_TRAFFIC', severity: 'HEALTHY', color: 'green', metric_type: 'http_bad', description: '', visualization: '' },
 
-    // --- DB ERRORS ---
-    { id: 'db_duplicate', title: 'Duplicate Key Error', chart_type: 'table', panel: 'DATABASE_MONITORING', severity: 'HEALTHY', color: 'green', metric_type: 'constraint', description: '', visualization: '' },
-    { id: 'db_fk_violation', title: 'Foreign Key Violation', chart_type: 'pieChart', panel: 'DATABASE_MONITORING', severity: 'HEALTHY', color: 'green', metric_type: 'constraint', description: '', visualization: '' },
-    { id: 'db_timeout_err', title: 'DB Connection Timeout', chart_type: 'ringChart', panel: 'DATABASE_MONITORING', severity: 'HEALTHY', color: 'green', metric_type: 'connection', description: '', visualization: '' },
-    { id: 'db_schema_err', title: 'Table Not Found', chart_type: 'logStream', panel: 'DATABASE_MONITORING', severity: 'HEALTHY', color: 'green', metric_type: 'schema', description: '', visualization: '' },
-    { id: 'db_rollback', title: 'Transaction Rollback', chart_type: 'barChart', panel: 'DATABASE_MONITORING', severity: 'HEALTHY', color: 'green', metric_type: 'transaction', description: '', visualization: '' },
+    // --- SYSTEM & INFRA ---
+    { id: 'sys_cpu_over', title: 'CPU Overload', chart_type: 'ring', panel: 'SYSTEM_HEALTH', severity: 'HEALTHY', color: 'green', metric_type: 'usage', description: '', visualization: '' },
+    { id: 'sys_mem_leak', title: 'Memory Leak', chart_type: 'ring', panel: 'SYSTEM_HEALTH', severity: 'HEALTHY', color: 'green', metric_type: 'usage', description: '', visualization: '' },
+    { id: 'sys_disk_full', title: 'Disk Full', chart_type: 'gauge', panel: 'SYSTEM_HEALTH', severity: 'HEALTHY', color: 'green', metric_type: 'usage', description: '', visualization: '' },
+    { id: 'sys_docker_crash', title: 'Docker Container Crash', chart_type: 'counter', panel: 'SYSTEM_HEALTH', severity: 'HEALTHY', color: 'green', metric_type: 'restart', description: '', visualization: '' },
+    { id: 'sys_cont_restart', title: 'Container Restart', chart_type: 'counter', panel: 'SYSTEM_HEALTH', severity: 'HEALTHY', color: 'green', metric_type: 'restart', description: '', visualization: '' },
+    { id: 'sys_threads', title: 'Thread Exhaustion', chart_type: 'line', panel: 'SYSTEM_HEALTH', severity: 'HEALTHY', color: 'green', metric_type: 'threads', description: '', visualization: '' },
+    { id: 'sys_thread_dead', title: 'Thread Deadlock', chart_type: 'counter', panel: 'SYSTEM_HEALTH', severity: 'HEALTHY', color: 'green', metric_type: 'deadlock', description: '', visualization: '' },
+    { id: 'sys_dns_fail', title: 'DNS Failure', chart_type: 'timeline', panel: 'SYSTEM_HEALTH', severity: 'HEALTHY', color: 'green', metric_type: 'network', description: '', visualization: '' },
+    { id: 'sys_net_timeout', title: 'Network Timeout', chart_type: 'line', panel: 'SYSTEM_HEALTH', severity: 'HEALTHY', color: 'green', metric_type: 'network', description: '', visualization: '' },
+    { id: 'sys_queue_over', title: 'Queue Overflow', chart_type: 'gauge', panel: 'SYSTEM_HEALTH', severity: 'HEALTHY', color: 'green', metric_type: 'load', description: '', visualization: '' },
+    { id: 'sys_restarter', title: 'Service Restart', chart_type: 'counter', panel: 'SYSTEM_HEALTH', severity: 'HEALTHY', color: 'green', metric_type: 'lifecycle', description: '', visualization: '' },
 
-    // --- AUTH ERRORS ---
-    { id: 'auth_jwt_fail', title: 'Invalid JWT Token', chart_type: 'pieChart', panel: 'AUTH_EVENTS', severity: 'HEALTHY', color: 'green', metric_type: 'security', description: '', visualization: '' },
-    { id: 'auth_session_exp', title: 'Expired Sessions', chart_type: 'lineChart', panel: 'AUTH_EVENTS', severity: 'HEALTHY', color: 'green', metric_type: 'security', description: '', visualization: '' },
-    { id: 'auth_role_denied', title: 'Unauthorized Role Access', chart_type: 'barChart', panel: 'AUTH_EVENTS', severity: 'HEALTHY', color: 'green', metric_type: 'security', description: '', visualization: '' },
-    { id: 'auth_csrf', title: 'CSRF Protection', chart_type: 'counter', panel: 'AUTH_EVENTS', severity: 'HEALTHY', color: 'green', metric_type: 'security', description: '', visualization: '' },
+    // --- ERRORS & EXCEPTIONS ---
+    { id: 'err_file_corr', title: 'File Corrupt', chart_type: 'table', panel: 'APPLICATION_LOGS', severity: 'HEALTHY', color: 'green', metric_type: 'io_error', description: '', visualization: '' },
+    { id: 'err_null_ptr', title: 'Null Pointer', chart_type: 'logViewer', panel: 'APPLICATION_LOGS', severity: 'HEALTHY', color: 'green', metric_type: 'runtime_error', description: '', visualization: '' },
+    { id: 'err_div_zero', title: 'Division by Zero', chart_type: 'stackTrace', panel: 'APPLICATION_LOGS', severity: 'HEALTHY', color: 'green', metric_type: 'runtime_error', description: '', visualization: '' },
+    { id: 'err_inv_input', title: 'Invalid Input', chart_type: 'table', panel: 'APPLICATION_LOGS', severity: 'HEALTHY', color: 'green', metric_type: 'logic_error', description: '', visualization: '' },
+    { id: 'err_json_parse', title: 'JSON Parse Error', chart_type: 'table', panel: 'APPLICATION_LOGS', severity: 'HEALTHY', color: 'green', metric_type: 'format_error', description: '', visualization: '' },
+    { id: 'err_timeout_exc', title: 'Timeout Exception', chart_type: 'table', panel: 'APPLICATION_LOGS', severity: 'HEALTHY', color: 'green', metric_type: 'runtime_error', description: '', visualization: '' },
+    { id: 'err_unknown', title: 'Unknown Exception', chart_type: 'logConsole', panel: 'APPLICATION_LOGS', severity: 'HEALTHY', color: 'green', metric_type: 'runtime_error', description: '', visualization: '' },
+    { id: 'err_config', title: 'Config Error', chart_type: 'logViewer', panel: 'APPLICATION_LOGS', severity: 'HEALTHY', color: 'green', metric_type: 'env_error', description: '', visualization: '' },
+    { id: 'err_env_miss', title: 'Env Var Missing', chart_type: 'logViewer', panel: 'APPLICATION_LOGS', severity: 'HEALTHY', color: 'green', metric_type: 'env_error', description: '', visualization: '' },
+    { id: 'err_high_error', title: 'High Error Rate', chart_type: 'ring', panel: 'APPLICATION_LOGS', severity: 'HEALTHY', color: 'green', metric_type: 'health_score', description: '', visualization: '' },
 
-    // --- API ERRORS ---
-    { id: 'api_400', title: '400 Bad Requests', chart_type: 'barChart', panel: 'API_TRAFFIC', severity: 'HEALTHY', color: 'green', metric_type: 'http_error', description: '', visualization: '' },
-    { id: 'api_401', title: '401 Unauthorized', chart_type: 'pieChart', panel: 'API_TRAFFIC', severity: 'HEALTHY', color: 'green', metric_type: 'http_error', description: '', visualization: '' },
-    { id: 'api_404', title: '404 Not Found', chart_type: 'horizontalBarChart', panel: 'API_TRAFFIC', severity: 'HEALTHY', color: 'green', metric_type: 'http_error', description: '', visualization: '' },
-    { id: 'api_429', title: '429 Rate Limited', chart_type: 'spikeLine', panel: 'API_TRAFFIC', severity: 'HEALTHY', color: 'green', metric_type: 'http_error', description: '', visualization: '' },
-    { id: 'api_500', title: '500 Internal Error', chart_type: 'flashingCounter', panel: 'API_TRAFFIC', severity: 'HEALTHY', color: 'green', metric_type: 'http_error', description: '', visualization: '' },
-    { id: 'api_503', title: '503 Service Down', chart_type: 'criticalAlertPanel', panel: 'API_TRAFFIC', severity: 'HEALTHY', color: 'green', metric_type: 'http_error', description: '', visualization: '' },
-
-    // --- STORAGE/FILE ---
-    { id: 'file_upload_fail', title: 'Upload Failures', chart_type: 'pieChart', panel: 'STORAGE', severity: 'HEALTHY', color: 'green', metric_type: 'io_error', description: '', visualization: '' },
-    { id: 'file_permission', title: 'Permission Denied', chart_type: 'logTable', panel: 'STORAGE', severity: 'HEALTHY', color: 'green', metric_type: 'io_error', description: '', visualization: '' },
-    { id: 'storage_bucket_fail', title: 'Bucket Health', chart_type: 'storageRing', panel: 'STORAGE', severity: 'HEALTHY', color: 'green', metric_type: 'infra', description: '', visualization: '' },
-
-    // --- SECURITY ---
-    { id: 'sec_sqli', title: 'SQL Injection Attempts', chart_type: 'securityTable', panel: 'SECURITY', severity: 'HEALTHY', color: 'green', metric_type: 'exploit', description: '', visualization: '' },
-    { id: 'sec_brute', title: 'Brute Force Detection', chart_type: 'lineChart', panel: 'SECURITY', severity: 'HEALTHY', color: 'green', metric_type: 'attack', description: '', visualization: '' },
-    { id: 'sec_auth_bypass', title: 'Auth Bypass Attempts', chart_type: 'barChart', panel: 'SECURITY', severity: 'HEALTHY', color: 'green', metric_type: 'exploit', description: '', visualization: '' },
-    { id: 'sec_tamper', title: 'Token Tampering', chart_type: 'securityBarChart', panel: 'SECURITY', severity: 'HEALTHY', color: 'green', metric_type: 'integrity', description: '', visualization: '' },
+    // --- EXTERNAL & JOBS ---
+    { id: 'ai_api_fail', title: 'AI API Failure', chart_type: 'counter', panel: 'EXTERNAL_SERVICES', severity: 'HEALTHY', color: 'green', metric_type: 'third_party', description: '', visualization: '' },
+    { id: 'pay_timeout', title: 'Payment Timeout', chart_type: 'pie', panel: 'EXTERNAL_SERVICES', severity: 'HEALTHY', color: 'green', metric_type: 'third_party', description: '', visualization: '' },
+    { id: 'web_fail', title: 'Webhook Failure', chart_type: 'line', panel: 'EXTERNAL_SERVICES', severity: 'HEALTHY', color: 'green', metric_type: 'outbound', description: '', visualization: '' },
+    { id: 'web_retry_fail', title: 'Webhook Retry Fail', chart_type: 'counter', panel: 'EXTERNAL_SERVICES', severity: 'HEALTHY', color: 'green', metric_type: 'outbound', description: '', visualization: '' },
+    { id: 'cron_fail', title: 'Cron Failure', chart_type: 'counter', panel: 'EXTERNAL_SERVICES', severity: 'HEALTHY', color: 'green', metric_type: 'scheduler', description: '', visualization: '' },
+    { id: 'job_stuck', title: 'Background Job Stuck', chart_type: 'counter', panel: 'EXTERNAL_SERVICES', severity: 'HEALTHY', color: 'green', metric_type: 'workers', description: '', visualization: '' },
+    { id: 'job_crash', title: 'Background Job Crash', chart_type: 'counter', panel: 'EXTERNAL_SERVICES', severity: 'HEALTHY', color: 'green', metric_type: 'workers', description: '', visualization: '' },
+    { id: 'gen_trend', title: 'Log Activity Trend', chart_type: 'line', panel: 'GENERIC_MONITORING', severity: 'HEALTHY', color: 'green', metric_type: 'general_metric', description: '', visualization: '' },
 ];
 
 export default function IntelligentChartRenderer() {
@@ -269,14 +289,16 @@ function LogChartItem({ chart }: { chart: MappedChart }) {
                     { value: chart.severity === 'HEALTHY' ? 70 : 25, itemStyle: { color: 'rgba(255,255,255,0.02)' } }
                 ]
             }];
-        } else if (chartType.includes('line') || chartType.includes('spike')) {
+        } else if (chartType.includes('line') || chartType.includes('spike') || chartType.includes('timeline')) {
             option.series = [{
                 type: 'line',
-                smooth: true,
+                smooth: chartType.includes('timeline') ? false : true,
+                step: chartType.includes('timeline') ? 'start' : undefined,
                 data: Array(15).fill(0).map(() => Math.random() * 50 + (chart.severity === 'CRITICAL' ? 50 : 0)),
                 lineStyle: { color, width: 2 },
                 areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color }, { offset: 1, color: 'transparent' }]), opacity: 0.1 },
-                symbol: 'none'
+                symbol: chartType.includes('timeline') ? 'circle' : 'none',
+                symbolSize: 4
             }];
         } else if (chartType.includes('pie') || chartType.includes('donut')) {
             option.series = [{
@@ -297,8 +319,7 @@ function LogChartItem({ chart }: { chart: MappedChart }) {
                 itemStyle: { color, borderRadius: [2, 2, 0, 0] },
                 barWidth: '40%'
             }];
-        } else {
-            // Default: Counter or Table placeholder (uses axes setup earlier)
+        } else if (chartType.includes('counter') || chartType.includes('badge') || chartType.includes('panel')) {
             option.series = [{
                 type: 'scatter',
                 symbolSize: 0,
@@ -306,12 +327,41 @@ function LogChartItem({ chart }: { chart: MappedChart }) {
                 label: {
                     show: true,
                     position: 'inside',
-                    formatter: chart.severity === 'HEALTHY' ? 'NORMAL' : 'DETECTED',
-                    color,
-                    fontSize: 10,
-                    fontWeight: 'bold'
+                    formatter: chart.severity === 'HEALTHY' ? '{@[0]}' : '{@[0]}',
+                    rich: {
+                        a: { fontSize: 24, fontWeight: 'bold', color: '#fff' }
+                    }
                 }
             }];
+            // Use dummy data for display
+            option.xAxis.min = -1; option.xAxis.max = 1;
+            option.yAxis.min = -1; option.yAxis.max = 1;
+            option.series[0].label.formatter = () => {
+                return chart.severity === 'HEALTHY' ? 'ONLINE' : 'ALERT';
+            };
+            option.series[0].label.fontSize = 20;
+        } else {
+            // Table / Log / Trace view placeholder
+            option.series = [{
+                type: 'scatter',
+                symbolSize: 0,
+                data: [[0, 0]],
+                label: {
+                    show: true,
+                    position: 'inside',
+                    formatter: () => 'DATA GRID ENABLED\n[ STREAM ACTIVE ]',
+                    color: '#6366f1',
+                    fontSize: 8,
+                    fontWeight: 'bold',
+                    backgroundColor: 'rgba(99, 102, 241, 0.05)',
+                    padding: [10, 20],
+                    borderRadius: 8,
+                    borderWidth: 1,
+                    borderColor: 'rgba(99, 102, 241, 0.2)'
+                }
+            }];
+            option.xAxis.min = -1; option.xAxis.max = 1;
+            option.yAxis.min = -1; option.yAxis.max = 1;
         }
 
         // Use requestAnimationFrame to ensure DOM is ready and avoid "main process" error

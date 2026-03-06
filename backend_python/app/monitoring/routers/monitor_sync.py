@@ -9,7 +9,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..models import get_monitor_db, UserProject, ProjectFile, ProjectLog
-from ..agents.monitoring_agent import MonitoringAgent
 from app.config import settings
 
 # Setup logging
@@ -24,6 +23,7 @@ def get_agent():
     global _agent
     if _agent is None:
         try:
+            from ..agents.monitoring_agent import MonitoringAgent
             _agent = MonitoringAgent(groq_api_key=settings.GROK_API_KEY)
         except Exception:
             pass
@@ -87,6 +87,45 @@ async def sync_monitor_data(req: SyncRequest, db: Session = Depends(get_monitor_
                 log_line=l.line,
                 timestamp=l.timestamp or datetime.utcnow()
             ))
+            
+            # --- Real-time Logic ---
+            # Prepare log for mapping engine (MUST MATCH log_chart_mapper.py expectation)
+            log_data = {
+                "level": "ERROR" if "error" in l.line.lower() else ("WARNING" if "warning" in l.line.lower() else "INFO"),
+                "message": l.line,
+                "timestamp": str(l.timestamp or datetime.utcnow())
+            }
+
+            # 1. Update global metrics engine
+            from app.services.metrics_engine import metrics_engine
+            metrics_engine.process_log(log_data)
+
+            # 2. Analyze for intelligent charts
+            from app.services.log_chart_mapper import analyze_log_and_assign_chart, explain_log_issue
+            chart_mapping = analyze_log_and_assign_chart(log_data)
+            explanation = explain_log_issue(log_data)
+
+            # 3. Broadcast to all active sessions via management websocket
+            # We use "default_user" for now as per monitor_ws.py implementation
+            broadcast_payload = {
+                "type": "mapped_chart",
+                "mapping": chart_mapping,
+                "ai": explanation,
+                "log_line": l.line # Pass to live stream console too
+            }
+            
+            # Use asyncio to fire and forget the broadcast
+            import asyncio
+            from .monitor_ws import manager  # Deferred import to avoid circular dependency
+            
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                loop.create_task(manager.broadcast_to_user("default_user", broadcast_payload))
+                # Also broadcast the log itself for the Terminal console
+                loop.create_task(manager.broadcast_to_user("default_user", {
+                    "type": log_data["level"].lower(),
+                    "data": l.line
+                }))
 
     project.last_updated = datetime.utcnow()
     db.commit()
@@ -96,17 +135,37 @@ async def sync_monitor_data(req: SyncRequest, db: Session = Depends(get_monitor_
 @router.get("/projects/{user_id}")
 async def get_user_projects(user_id: str, db: Session = Depends(get_monitor_db)):
     """List all projects for a user optimized for speed."""
-    projects = db.query(UserProject).filter(UserProject.user_id == user_id).all()
+    from sqlalchemy import func
+    
+    # Subqueries for counts
+    file_count_sub = db.query(
+        ProjectFile.project_id, 
+        func.count(ProjectFile.id).label('count')
+    ).group_by(ProjectFile.project_id).subquery()
+    
+    log_count_sub = db.query(
+        ProjectLog.project_id, 
+        func.count(ProjectLog.id).label('count')
+    ).group_by(ProjectLog.project_id).subquery()
+
+    projects = db.query(
+        UserProject,
+        func.coalesce(file_count_sub.c.count, 0),
+        func.coalesce(log_count_sub.c.count, 0)
+    ).outerjoin(
+        file_count_sub, UserProject.id == file_count_sub.c.project_id
+    ).outerjoin(
+        log_count_sub, UserProject.id == log_count_sub.c.project_id
+    ).filter(UserProject.user_id == user_id).all()
+
     results = []
-    for p in projects:
-        file_count = db.query(ProjectFile).filter(ProjectFile.project_id == p.id).count()
-        log_count = db.query(ProjectLog).filter(ProjectLog.project_id == p.id).count()
+    for p, f_count, l_count in projects:
         results.append({
             "id": p.id,
             "name": p.project_name,
             "last_updated": p.last_updated,
-            "file_count": file_count,
-            "log_count": log_count
+            "file_count": f_count,
+            "log_count": l_count
         })
     return results
 
