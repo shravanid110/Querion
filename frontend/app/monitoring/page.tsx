@@ -737,43 +737,43 @@ export default function MonitoringPage() {
                     </div>
 
                     {/* CLI quickstart hint */}
-                    {!backendOnline || projects.length === 0 ? (
-                        <div className="mb-8 bg-slate-900 border border-slate-700 rounded-2xl p-6">
-                            <div className="flex items-start gap-4">
-                                <div className="p-2.5 bg-indigo-600/20 rounded-xl flex-shrink-0">
-                                    <Terminal className="h-5 w-5 text-indigo-400" />
-                                </div>
-                                <div>
-                                    <h3 className="font-bold text-slate-200 mb-1">
-                                        {!backendOnline
-                                            ? "⚠️ Backend not reachable"
-                                            : "No projects connected yet"}
-                                    </h3>
-                                    {projectError && (
-                                        <p className="text-red-400 text-sm mb-3">{projectError}</p>
-                                    )}
-                                    <p className="text-slate-400 text-sm mb-3">
-                                        To connect a project, run these commands in your project
-                                        folder:
+                    <div className="mb-8 bg-slate-900 border border-slate-700 rounded-2xl p-6">
+                        <div className="flex items-start gap-4">
+                            <div className="p-2.5 bg-indigo-600/20 rounded-xl flex-shrink-0">
+                                <Terminal className="h-5 w-5 text-indigo-400" />
+                            </div>
+                            <div>
+                                <h3 className="font-bold text-slate-200 mb-1">
+                                    {!backendOnline
+                                        ? "⚠️ Backend not reachable"
+                                        : projects.length === 0
+                                            ? "No projects connected yet"
+                                            : "Connected Projects Guide"}
+                                </h3>
+                                {projectError && (
+                                    <p className="text-red-400 text-sm mb-3">{projectError}</p>
+                                )}
+                                <p className="text-slate-400 text-sm mb-3">
+                                    To connect a project, run these commands in your project
+                                    folder:
+                                </p>
+                                <div className="bg-slate-950 rounded-xl p-4 font-mono text-sm space-y-1">
+                                    <p>
+                                        <span className="text-slate-500"># 1. Install CLI</span>
                                     </p>
-                                    <div className="bg-slate-950 rounded-xl p-4 font-mono text-sm space-y-1">
-                                        <p>
-                                            <span className="text-slate-500"># 1. Install CLI</span>
-                                        </p>
-                                        <p className="text-cyan-300">
-                                            pip install querion-cli
-                                        </p>
-                                        <p className="mt-2">
-                                            <span className="text-slate-500"># 2. Watch your project</span>
-                                        </p>
-                                        <p className="text-cyan-300">
-                                            querion watch --project "MyProject"
-                                        </p>
-                                    </div>
+                                    <p className="text-cyan-300">
+                                        pip install querion-cli
+                                    </p>
+                                    <p className="mt-2">
+                                        <span className="text-slate-500"># 2. Watch your project</span>
+                                    </p>
+                                    <p className="text-cyan-300">
+                                        querion watch --project "MyProject"
+                                    </p>
                                 </div>
                             </div>
                         </div>
-                    ) : null}
+                    </div>
 
                     {loadingProjects ? (
                         <div className="flex justify-center py-16">

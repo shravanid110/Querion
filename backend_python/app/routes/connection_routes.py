@@ -67,7 +67,7 @@ async def list_connections(db: Session = Depends(get_db)):
                 "host": c.host,
                 "database": c.database,
                 "port": c.port,
-                "createdAt": c.createdAt
+                "createdAt": c.created_at
             }
             for c in connections
         ]

@@ -1,245 +1,239 @@
 "use client";
 
-import React, { useState } from 'react';
+import React from 'react';
 import { motion } from 'framer-motion';
-import { Database, Server, Globe, User, Lock, Eye, EyeOff, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Database, Server, Globe, ArrowRight, Activity, Zap, Shield, PieChart } from 'lucide-react';
 import { Navbar } from '@/components/layout/Navbar';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
+import Link from 'next/link';
 
-import { useRouter } from 'next/navigation';
-import { testConnection, saveConnection } from '@/services/api';
-
-export default function ConnectionPage() {
-    const router = useRouter();
-    const [formData, setFormData] = useState({
-        name: '',
-        host: 'localhost',
-        port: '3306',
-        database: '',
-        username: '',
-        password: '',
-    });
-
-    const [showPassword, setShowPassword] = useState(false);
-    const [isTesting, setIsTesting] = useState(false);
-    const [isSaving, setIsSaving] = useState(false);
-    const [connectionStatus, setConnectionStatus] = useState<'idle' | 'success' | 'error'>('idle');
-    const [errorMessage, setErrorMessage] = useState('');
-
-    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const { name, value } = e.target;
-        setFormData((prev) => ({ ...prev, [name]: value }));
-        if (connectionStatus !== 'idle') {
-            setConnectionStatus('idle');
-            setErrorMessage('');
-        }
-    };
-
-    const handleTestConnection = async () => {
-        setIsTesting(true);
-        setConnectionStatus('idle');
-        setErrorMessage('');
-
-        try {
-            const result = await testConnection({
-                ...formData,
-                port: Number(formData.port)
-            });
-
-            if (result.success) {
-                setConnectionStatus('success');
-            } else {
-                setConnectionStatus('error');
-                setErrorMessage(result.error || 'Connection failed');
-            }
-        } catch (error: any) {
-            setConnectionStatus('error');
-            setErrorMessage(error.response?.data?.error || error.message || 'Connection failed');
-        } finally {
-            setIsTesting(false);
-        }
-    };
-
-    const handleSaveConnection = async () => {
-        setIsSaving(true);
-        try {
-            await saveConnection({
-                ...formData,
-                port: Number(formData.port)
-            });
-            router.push('/dashboard');
-        } catch (error: any) {
-            setErrorMessage(error.response?.data?.error || 'Failed to save connection');
-            setConnectionStatus('error');
-        } finally {
-            setIsSaving(false);
-        }
-    };
-
+export default function HomePage() {
     return (
-        <div className="min-h-screen bg-gray-50 flex flex-col font-sans text-gray-900">
+        <div className="min-h-screen bg-mesh flex flex-col font-sans overflow-hidden">
             <Navbar />
 
-            <main className="flex-1 flex items-center justify-center p-6 pt-24">
+            {/* Background Decorations */}
+            <div className="fixed inset-0 pointer-events-none">
+                <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-indigo-600/10 rounded-full blur-[120px] animate-pulse" />
+                <div className="absolute bottom-1/4 right-1/4 w-[500px] h-[500px] bg-cyan-600/10 rounded-full blur-[150px] animate-pulse" style={{ animationDelay: '2s' }} />
+            </div>
+
+            <main className="flex-1 flex flex-col items-center justify-center pt-32 pb-20 px-6 relative z-10">
+                {/* Hero Section */}
+                <div className="max-w-4xl w-full text-center space-y-8">
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ duration: 0.5 }}
+                        className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-bold tracking-widest uppercase mb-4"
+                    >
+                        <Zap size={14} className="fill-indigo-400" />
+                        Next-Gen AI Backend Intelligence
+                    </motion.div>
+
+                    <motion.h1
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.6, delay: 0.1 }}
+                        className="text-5xl md:text-7xl font-extrabold text-white tracking-tight leading-[1.1]"
+                    >
+                        Ask Your Database. <br />
+                        <span className="bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 via-purple-400 to-cyan-400">
+                            Monitor Your Backend.
+                        </span> <br />
+                        Instantly.
+                    </motion.h1>
+
+                    <motion.p
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.6, delay: 0.2 }}
+                        className="text-lg md:text-xl text-slate-400 max-w-2xl mx-auto leading-relaxed"
+                    >
+                        Querion enables secure conversational database queries and intelligent backend monitoring using state-of-the-art AI.
+                    </motion.p>
+
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.6, delay: 0.3 }}
+                        className="flex flex-wrap items-center justify-center gap-4 pt-4"
+                    >
+                        <Link href="/database-selection">
+                            <Button className="h-14 px-8 rounded-2xl bg-gradient-to-r from-indigo-600 to-cyan-500 hover:from-indigo-500 hover:to-cyan-400 text-white font-bold text-base shadow-xl shadow-indigo-500/20 border-0 gap-2 transition-all duration-300 hover:scale-105">
+                                Get Started <ArrowRight size={18} />
+                            </Button>
+                        </Link>
+                        <Link href="/landingpage">
+                            <Button variant="ghost" className="h-14 px-8 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 text-slate-300 font-bold text-base gap-2 transition-all duration-300">
+                                Learn More <ArrowRight size={18} />
+                            </Button>
+                        </Link>
+                    </motion.div>
+
+                    {/* Trust badges */}
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ duration: 0.6, delay: 0.5 }}
+                        className="flex flex-wrap items-center justify-center gap-6 pt-4 text-slate-500 text-xs"
+                    >
+                        {[
+                            { icon: <Shield size={14} className="text-emerald-400" />, label: 'Enterprise Security' },
+                            { icon: <Zap size={14} className="text-yellow-400 fill-yellow-400" />, label: 'AI Powered' },
+                            { icon: <Activity size={14} className="text-cyan-400" />, label: 'Real-Time Monitoring' },
+                        ].map(b => (
+                            <div key={b.label} className="flex items-center gap-2">
+                                {b.icon}
+                                <span>{b.label}</span>
+                            </div>
+                        ))}
+                    </motion.div>
+                </div>
+
+                {/* Feature Cards */}
                 <motion.div
-                    initial={{ opacity: 0, y: 20 }}
+                    initial={{ opacity: 0, y: 40 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.5, ease: "easeOut" }}
-                    className="w-full max-w-lg"
+                    transition={{ duration: 0.7, delay: 0.4 }}
+                    className="max-w-6xl w-full mt-24"
                 >
-                    <Card className="overflow-hidden border-0 shadow-2xl shadow-indigo-500/10">
-                        <div className="bg-gradient-to-r from-indigo-600 to-violet-600 p-1 h-2 w-full" />
-                        <CardHeader className="text-center pb-8 pt-8 px-8">
-                            <div className="mx-auto bg-indigo-50 p-3 rounded-full w-fit mb-4 text-indigo-600">
-                                <Database size={32} />
-                            </div>
-                            <CardTitle className="text-2xl font-bold">Connect Database</CardTitle>
-                            <CardDescription className="text-base mt-2">
-                                Enter your connection details to start analyzing your data.
-                            </CardDescription>
-                        </CardHeader>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        {/* Card 1: Database Interaction */}
+                        <FeatureCard
+                            title="Connect Database"
+                            description="Securely connect and interact with your databases using natural language queries powered by AI."
+                            icon={<Database className="h-8 w-8 text-indigo-400" />}
+                            link="/database-selection"
+                            buttonText="Connect Database"
+                            visual={<DatabaseVisual />}
+                        />
 
-                        <CardContent className="space-y-6 px-8 pb-8">
-                            {/* Connection Name */}
-                            <div className="space-y-4">
-                                <div className="grid gap-1.5">
-                                    <Label htmlFor="name">Connection Name (Optional)</Label>
-                                    <Input
-                                        id="name"
-                                        name="name"
-                                        placeholder="e.g. Production DB"
-                                        value={formData.name}
-                                        onChange={handleInputChange}
-                                    />
-                                </div>
+                        {/* Card 2: Backend Monitoring */}
+                        <FeatureCard
+                            title="Backend Monitoring"
+                            description="Monitor system performance, logs, API activity, and backend health with intelligent insights."
+                            icon={<Activity className="h-8 w-8 text-cyan-400" />}
+                            link="/monitoring"
+                            buttonText="Open Monitoring Dashboard"
+                            visual={<MonitoringVisual />}
+                        />
 
-                                <div className="grid grid-cols-3 gap-4">
-                                    <div className="col-span-2 space-y-1.5">
-                                        <Label htmlFor="host">Host / IP Address</Label>
-                                        <Input
-                                            id="host"
-                                            name="host"
-                                            placeholder="localhost"
-                                            icon={<Server size={16} />}
-                                            value={formData.host}
-                                            onChange={handleInputChange}
-                                        />
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        <Label htmlFor="port">Port</Label>
-                                        <Input
-                                            id="port"
-                                            name="port"
-                                            placeholder="3306"
-                                            value={formData.port}
-                                            onChange={handleInputChange}
-                                        />
-                                    </div>
-                                </div>
-
-                                <div className="space-y-1.5">
-                                    <Label htmlFor="database">Database Name</Label>
-                                    <Input
-                                        id="database"
-                                        name="database"
-                                        placeholder="my_database"
-                                        icon={<Database size={16} />}
-                                        value={formData.database}
-                                        onChange={handleInputChange}
-                                    />
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="space-y-1.5">
-                                        <Label htmlFor="username">Username</Label>
-                                        <Input
-                                            id="username"
-                                            name="username"
-                                            placeholder="root"
-                                            icon={<User size={16} />}
-                                            value={formData.username}
-                                            onChange={handleInputChange}
-                                        />
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        <Label htmlFor="password">Password</Label>
-                                        <div className="relative">
-                                            <Input
-                                                id="password"
-                                                name="password"
-                                                type={showPassword ? 'text' : 'password'}
-                                                placeholder="••••••••"
-                                                icon={<Lock size={16} />}
-                                                value={formData.password}
-                                                onChange={handleInputChange}
-                                            />
-                                            <button
-                                                type="button"
-                                                onClick={() => setShowPassword(!showPassword)}
-                                                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
-                                            >
-                                                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Feedback Messages */}
-                            {connectionStatus === 'success' && (
-                                <motion.div
-                                    initial={{ opacity: 0, height: 0 }}
-                                    animate={{ opacity: 1, height: 'auto' }}
-                                    className="flex items-center gap-2 p-3 bg-green-50 text-green-700 text-sm rounded-lg border border-green-100"
-                                >
-                                    <CheckCircle2 size={18} />
-                                    <span>Success! Connection established.</span>
-                                </motion.div>
-                            )}
-
-                            {connectionStatus === 'error' && (
-                                <motion.div
-                                    initial={{ opacity: 0, height: 0 }}
-                                    animate={{ opacity: 1, height: 'auto' }}
-                                    className="flex items-center gap-2 p-3 bg-red-50 text-red-700 text-sm rounded-lg border border-red-100"
-                                >
-                                    <AlertCircle size={18} />
-                                    <span>{errorMessage || 'Connection failed.'}</span>
-                                </motion.div>
-                            )}
-
-                        </CardContent>
-
-                        <CardFooter className="flex flex-col gap-3 px-8 pb-8 pt-0">
-                            <div className="grid grid-cols-2 gap-3 w-full">
-                                <Button
-                                    variant="secondary"
-                                    onClick={handleTestConnection}
-                                    isLoading={isTesting}
-                                    className="w-full"
-                                >
-                                    Test Connection
-                                </Button>
-                                <Button
-                                    variant="primary"
-                                    onClick={handleSaveConnection}
-                                    isLoading={isSaving}
-                                    disabled={connectionStatus !== 'success'}
-                                    className="w-full"
-                                >
-                                    Save & Continue
-                                </Button>
-                            </div>
-                            <p className="text-xs text-center text-gray-400 mt-4">
-                                Your credentials are encrypted using AES-256 before storage.
-                            </p>
-                        </CardFooter>
-                    </Card>
+                        {/* Card 3: External Dataset */}
+                        <FeatureCard
+                            title="Dataset via URL"
+                            description="Connect external datasets instantly using a secure URL. Querion will automatically fetch and integrate data."
+                            icon={<Globe className="h-8 w-8 text-purple-400" />}
+                            link="/connect"
+                            buttonText="Connect Dataset"
+                            visual={<DatasetVisual />}
+                        />
+                    </div>
                 </motion.div>
             </main>
+
+            {/* Footer */}
+            <footer className="py-10 px-6 border-t border-white/5 text-center text-slate-500 text-sm">
+                <p>&copy; {new Date().getFullYear()} Querion AI. All rights reserved.</p>
+            </footer>
+        </div>
+    );
+}
+
+function FeatureCard({ title, description, icon, link, buttonText, visual }: any) {
+    return (
+        <motion.div
+            whileHover={{ y: -10 }}
+            className="group relative flex flex-col p-8 rounded-[32px] glass-card border-white/10 hover:border-indigo-500/50 transition-all duration-500 overflow-hidden h-full shadow-2xl"
+        >
+            <div className="absolute top-0 right-0 p-10 opacity-5 group-hover:opacity-10 transition-opacity">
+                {icon}
+            </div>
+
+            <div className="mb-6 bg-white/5 w-14 h-14 rounded-2xl flex items-center justify-center border border-white/10 group-hover:scale-110 group-hover:bg-indigo-500/10 group-hover:border-indigo-500/20 transition-all duration-300">
+                {icon}
+            </div>
+
+            <h3 className="text-xl font-bold text-white mb-3 tracking-tight">{title}</h3>
+            <p className="text-slate-400 text-sm leading-relaxed mb-8 flex-1">
+                {description}
+            </p>
+
+            <div className="relative h-32 w-full mb-8 bg-black/20 rounded-2xl overflow-hidden border border-white/5 flex items-center justify-center">
+                {visual}
+            </div>
+
+            <Link href={link}>
+                <Button className="w-full h-12 rounded-xl bg-white/5 hover:bg-white/10 text-white border border-white/10 group-hover:border-indigo-500/30 group-hover:text-cyan-400 transition-all duration-300 font-semibold gap-2">
+                    {buttonText} <ArrowRight className="h-4 w-4" />
+                </Button>
+            </Link>
+
+            <div className="absolute -inset-[1px] bg-gradient-to-r from-indigo-500 to-cyan-500 rounded-[32px] z-[-1] opacity-0 group-hover:opacity-20 blur-sm transition-opacity duration-500" />
+        </motion.div>
+    );
+}
+
+function DatabaseVisual() {
+    return (
+        <div className="relative flex items-center justify-center gap-4 w-full h-full">
+            <div className="w-12 h-14 bg-indigo-500/10 border border-indigo-500/20 rounded-lg flex items-center justify-center animate-pulse">
+                <Database className="h-6 w-6 text-indigo-400/50" />
+            </div>
+            <div className="w-8 h-[2px] bg-gradient-to-r from-indigo-500/20 via-cyan-500/40 to-indigo-500/20" />
+            <div className="w-16 h-18 bg-cyan-500/10 border border-cyan-500/20 rounded-xl flex items-center justify-center shadow-[0_0_20px_rgba(34,211,238,0.1)]">
+                <Shield className="h-8 w-8 text-cyan-400" />
+            </div>
+            <div className="w-8 h-[2px] bg-gradient-to-r from-indigo-500/20 via-cyan-500/40 to-indigo-500/20" />
+            <div className="w-12 h-14 bg-indigo-500/10 border border-indigo-500/20 rounded-lg flex items-center justify-center animate-pulse" style={{ animationDelay: '1s' }}>
+                <Server className="h-6 w-6 text-indigo-400/50" />
+            </div>
+        </div>
+    );
+}
+
+function MonitoringVisual() {
+    return (
+        <div className="w-full px-6 space-y-3">
+            <div className="flex items-center justify-between">
+                <span className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">CPU</span>
+                <div className="flex-1 mx-3 h-1.5 bg-white/5 rounded-full overflow-hidden">
+                    <div className="h-full w-[45%] bg-gradient-to-r from-indigo-500 to-cyan-400 rounded-full" />
+                </div>
+                <span className="text-cyan-400 text-[10px] font-bold">45%</span>
+            </div>
+            <div className="flex items-center justify-between">
+                <span className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">RAM</span>
+                <div className="flex-1 mx-3 h-1.5 bg-white/5 rounded-full overflow-hidden">
+                    <div className="h-full w-[62%] bg-gradient-to-r from-purple-500 to-indigo-400 rounded-full" />
+                </div>
+                <span className="text-purple-400 text-[10px] font-bold">62%</span>
+            </div>
+            <div className="flex items-center justify-between">
+                <span className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">API</span>
+                <div className="flex-1 mx-3 h-1.5 bg-white/5 rounded-full overflow-hidden">
+                    <div className="h-full w-[88%] bg-gradient-to-r from-emerald-500 to-cyan-400 rounded-full" />
+                </div>
+                <span className="text-emerald-400 text-[10px] font-bold">Good</span>
+            </div>
+        </div>
+    );
+}
+
+function DatasetVisual() {
+    return (
+        <div className="flex items-center justify-center gap-3 w-full h-full px-4">
+            <div className="flex flex-col gap-1.5">
+                {[...Array(4)].map((_, i) => (
+                    <div key={i} className="h-1.5 rounded-full bg-purple-500/20 border border-purple-500/10" style={{ width: `${50 + i * 12}px` }} />
+                ))}
+            </div>
+            <div className="w-8 flex items-center justify-center">
+                <ArrowRight className="h-5 w-5 text-purple-400/50" />
+            </div>
+            <div className="w-16 h-16 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center">
+                <PieChart className="h-8 w-8 text-purple-400" />
+            </div>
         </div>
     );
 }

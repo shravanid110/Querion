@@ -5,6 +5,7 @@ import connectionRoutes from './routes/connection.routes';
 import queryRoutes from './routes/query.routes';
 import { urlConnectRoutes } from './routes/url_connect.routes';
 import securityRoutes from './routes/security.routes';
+import authRoutes from './routes/auth.routes';
 
 dotenv.config();
 
@@ -25,6 +26,7 @@ app.use('/api/connections', connectionRoutes);
 app.use('/api/query', queryRoutes);
 app.use('/api/url', urlConnectRoutes);
 app.use('/api/security', securityRoutes);
+app.use('/api/auth', authRoutes);
 
 app.get('/health', (req, res) => {
     res.json({ status: 'ok', version: '1.0.0' });

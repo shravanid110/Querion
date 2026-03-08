@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 from datetime import datetime
 from contextlib import asynccontextmanager
 
-from app.routes import connection_routes, query_routes, url_connect_routes, security_routes, voice_routes, report_routes
+from app.routes import connection_routes, query_routes, url_connect_routes, security_routes, voice_routes, report_routes, auth_routes
 from app.monitoring.routers import monitor_ws, monitor_sync
 from app.reporting.api import router as reporting_router
 from app.monitoring.dash_app import init_dash
@@ -66,6 +66,7 @@ app.include_router(query_routes.router,      prefix="/api/query",       tags=["q
 app.include_router(url_connect_routes.router,prefix="/api/url",         tags=["url"])
 app.include_router(security_routes.router,   prefix="/api/security",    tags=["security"])
 app.include_router(voice_routes.router,      prefix="/api",             tags=["voice"])
+app.include_router(auth_routes.router,       prefix="/api/auth",        tags=["auth"])
 app.include_router(monitor_ws.router,                                   tags=["monitoring-ws"])
 app.include_router(monitor_sync.router,      prefix="/api/monitor",     tags=["monitoring"])
 app.include_router(report_routes.router,     prefix="/api/report",      tags=["reports"])

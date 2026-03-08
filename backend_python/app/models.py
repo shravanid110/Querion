@@ -8,7 +8,7 @@ from .config import settings
 Base = declarative_base()
 
 class Connection(Base):
-    __tablename__ = "Connection"
+    __tablename__ = "connections"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     name = Column(String(255), nullable=True)
@@ -17,7 +17,7 @@ class Connection(Base):
     database = Column(String(255), nullable=False)
     username = Column(String(255), nullable=False)
     password = Column(String(1024), nullable=False) # Encrypted
-    createdAt = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
 engine_args = {
     "connect_args": {"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {},
