@@ -100,10 +100,25 @@ async def sync_monitor_data(req: SyncRequest, db: Session = Depends(get_monitor_
             from app.services.metrics_engine import metrics_engine
             metrics_engine.process_log(log_data)
 
-            # 2. Analyze for intelligent charts
-            from app.services.log_chart_mapper import analyze_log_and_assign_chart, explain_log_issue
+            # 2. Analyze for intelligent charts and AI insights (Ollama Phi-3)
+            from app.services.log_chart_mapper import analyze_log_and_assign_chart
+            from app.ai.log_analyzer import analyze_log
+            from app.routes.ai_insights import add_insight
+            
             chart_mapping = analyze_log_and_assign_chart(log_data)
-            explanation = explain_log_issue(log_data)
+            
+            # Hook the new AI analyzer into the log collector
+            ai_result = await analyze_log(l.line)
+            
+            # Map into the DashboardTab.tsx expected structure for latestAI
+            explanation = {
+                "reason": ai_result.get("cause", "Unknown cause"),
+                "impact": ai_result.get("severity", "medium"),
+                "suggested_fix": ai_result.get("suggested_fix", "Check local backend configuration.")
+            }
+            
+            # Save for /api/ai-insights endpoint
+            add_insight(ai_result, l.line)
 
             # 3. Broadcast to all active sessions via management websocket
             # We use "default_user" for now as per monitor_ws.py implementation
