@@ -33,6 +33,11 @@ class SyncHandler(FileSystemEventHandler):
         for p in parts:
             if p in SKIP_DIRS:
                 return False
+        
+        filename = os.path.basename(path).lower()
+        if filename in ['package-lock.json', 'yarn.lock', 'pnpm-lock.yaml']:
+            return False
+
         ext = os.path.splitext(path)[1]
         return ext in WATCHED_EXTENSIONS
 
@@ -149,7 +154,7 @@ def sync_worker(server_url, user_id, project_name, sync_queue, stop_event):
                     f"{server_url}/api/monitor/sync",
                     data=payload_str,
                     headers={'Content-Type': 'application/json'},
-                    timeout=5
+                    timeout=30
                 )
                 if resp.status_code == 200:
                     parts = []

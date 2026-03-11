@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { Navbar } from '@/components/layout/Navbar';
 import { ConnectionSelector } from '@/components/dashboard/ConnectionSelector';
@@ -32,6 +32,30 @@ export default function DashboardPage() {
     }
 
     const [result, setResult] = useState<QueryResult | null>(null);
+    const [initialPrompt, setInitialPrompt] = useState<string>('');
+
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const params = new URLSearchParams(window.location.search);
+            const promptParam = params.get('prompt');
+            if (promptParam) {
+                setInitialPrompt(promptParam);
+                // Clean the URL without reloading the page
+                window.history.replaceState({}, '', '/dashboard');
+            }
+        }
+    }, []);
+
+    // Try to auto-run the pre-filled prompt if we get a connection
+    useEffect(() => {
+        if (initialPrompt && selectedConnectionId && !result && !isThinking && !error) {
+            const run = async () => {
+                await handleSearch(initialPrompt);
+                setInitialPrompt(''); // Clear to prevent infinite loops on reconnect 
+            };
+            run();
+        }
+    }, [initialPrompt, selectedConnectionId]);
 
     const handleSearch = async (prompt: string) => {
         if (!selectedConnectionId) {
@@ -87,6 +111,7 @@ export default function DashboardPage() {
                                 isThinking={isThinking}
                                 generatedSql={result?.sql}
                                 explanation={result?.explanation}
+                                initialQuery={initialPrompt}
                             />
                         </div>
 

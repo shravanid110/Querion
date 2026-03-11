@@ -15,7 +15,7 @@ class MySQLService:
                 user=params.get('user'),
                 password=params.get('password'),
                 database=params.get('database'),
-                connect_timeout=10,
+                connect_timeout=5,
                 ssl_disabled=False,
                 ssl_verify_cert=False # Equivalent to rejectUnauthorized: false
             )

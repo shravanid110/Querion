@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
-from app.models import get_db, Connection
+from app.models import get_db, Connection, QueryHistory
 from app.services.encryption import decrypt
 from app.services.mysql_executor import MySQLService
 from app.services.nl_to_sql import convert_nl_to_sql, generate_data_insights
+import json
 
 router = APIRouter()
 
@@ -78,6 +80,26 @@ async def run_query(connectionId: str = Body(...), prompt: str = Body(...), db: 
                 rich_explanation = f"{header_part.strip()}\n\n{data_insights.strip()}"
             except Exception as e:
                 print(f"[Query Route] Insights generation failed: {e}")
+
+        # 7. Save to History
+        try:
+            history_record = QueryHistory(
+                user_id=connection.user_id or "default_user",
+                conn_id=connection.id,
+                conn_name=connection.name,
+                prompt=prompt,
+                sql_query=result["sql"],
+                explanation=rich_explanation,
+                columns=json.dumps(jsonable_encoder(data["columns"])),
+                rows_data=json.dumps(jsonable_encoder(rows[:100])), # Save top 100 rows safely
+                metrics=json.dumps({"totalRows": total_rows, "approxSum": numeric_sum})
+            )
+            db.add(history_record)
+            db.commit()
+            print(f"[Query Route] Saved query to history for {connection.name}")
+        except Exception as e:
+            print(f"[Query Route] Failed to save history: {e}")
+            db.rollback()
 
         return {
             "sql": result["sql"],

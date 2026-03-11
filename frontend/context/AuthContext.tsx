@@ -5,7 +5,7 @@ import { supabase } from "@/lib/supabaseClient";
 import axios from "axios";
 import { useRouter } from "next/navigation";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:4000";
 
 interface User {
     id: string;

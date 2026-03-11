@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, DateTime, create_engine
+from sqlalchemy import Column, String, Integer, DateTime, create_engine, Text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import datetime
@@ -11,12 +11,29 @@ class Connection(Base):
     __tablename__ = "connections"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), nullable=True) # ID of the user who owns this connection
     name = Column(String(255), nullable=True)
     host = Column(String(255), nullable=False)
     port = Column(Integer, default=3306)
     database = Column(String(255), nullable=False)
     username = Column(String(255), nullable=False)
-    password = Column(String(1024), nullable=False) # Encrypted
+    password = Column(String(1024), nullable=False) # Encrypted DB Password
+    user_master_password = Column(String(255), nullable=True) # Hashed Master Password
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+class QueryHistory(Base):
+    __tablename__ = "query_history"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), default="default_user")
+    conn_id = Column(String(36))
+    conn_name = Column(String(255))
+    prompt = Column(Text)
+    sql_query = Column(Text)
+    explanation = Column(Text)
+    columns = Column(Text) # JSON string
+    rows_data = Column(Text) # JSON string
+    metrics = Column(Text) # JSON string
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
 engine_args = {

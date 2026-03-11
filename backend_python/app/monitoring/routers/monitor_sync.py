@@ -1,4 +1,5 @@
 import logging
+import asyncio
 import httpx
 import re as _re
 import json
@@ -6,6 +7,7 @@ from datetime import datetime
 from typing import List, Optional
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from ..models import get_monitor_db, UserProject, ProjectFile, ProjectLog
@@ -55,96 +57,229 @@ class ChatRequest(BaseModel):
 @router.post("/sync")
 async def sync_monitor_data(req: SyncRequest, db: Session = Depends(get_monitor_db)):
     """Receive file deltas and log lines from the CLI."""
-    project = db.query(UserProject).filter(
-        UserProject.user_id == req.user_id,
-        UserProject.project_name == req.project_name
-    ).first()
+    try:
+        project = db.query(UserProject).filter(
+            UserProject.user_id == req.user_id,
+            UserProject.project_name == req.project_name
+        ).first()
 
-    if not project:
-        project = UserProject(user_id=req.user_id, project_name=req.project_name)
-        db.add(project)
-        db.flush()
+        if not project:
+            project = UserProject(user_id=req.user_id, project_name=req.project_name)
+            db.add(project)
+            db.commit() # Commit to get the ID for the background task
+            db.refresh(project)
 
-    if req.files:
-        for f in req.files:
-            existing_file = db.query(ProjectFile).filter(
-                ProjectFile.project_id == project.id,
-                ProjectFile.file_path == f.file_path
-            ).first()
-            if existing_file:
-                existing_file.content = f.content
-            else:
-                db.add(ProjectFile(
-                    project_id=project.id,
-                    file_path=f.file_path,
-                    content=f.content
-                ))
+        # Offload all heavy work to background to prevent CLI Timeout
+        asyncio.create_task(process_sync_background(req, project.id))
+        
+        return {"status": "success", "message": "Changes accepted for background processing.", "project_id": project.id}
+    except Exception as e:
+        logger.error(f"SYNC_INIT_ERROR: {str(e)}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
-    if req.logs:
-        for l in req.logs:
-            db.add(ProjectLog(
-                project_id=project.id,
-                log_line=l.line,
-                timestamp=l.timestamp or datetime.utcnow()
-            ))
-            
-            # --- Real-time Logic ---
-            # Prepare log for mapping engine (MUST MATCH log_chart_mapper.py expectation)
-            log_data = {
-                "level": "ERROR" if "error" in l.line.lower() else ("WARNING" if "warning" in l.line.lower() else "INFO"),
-                "message": l.line,
-                "timestamp": str(l.timestamp or datetime.utcnow())
-            }
+async def process_sync_background(req: SyncRequest, project_id: int):
+    """Heavy lifted processing of files and logs."""
+    from .monitor_ws import manager
+    from app.services.metrics_engine import metrics_engine
+    from app.services.log_chart_mapper import analyze_log_and_assign_chart
+    
+    with next(get_monitor_db()) as db:
+        try:
+            # 1. Sync Files
+            if req.files:
+                for f in req.files:
+                    if any(x in f.file_path for x in ["package-lock.json", "yarn.lock", "node_modules", ".git"]):
+                        continue
+                    
+                    existing_file = db.query(ProjectFile).filter(
+                        ProjectFile.project_id == project_id,
+                        ProjectFile.file_path == f.file_path
+                    ).first()
+                    if existing_file:
+                        existing_file.content = f.content
+                    else:
+                        db.add(ProjectFile(
+                            project_id=project_id,
+                            file_path=f.file_path,
+                            content=f.content
+                        ))
 
-            # 1. Update global metrics engine
-            from app.services.metrics_engine import metrics_engine
-            metrics_engine.process_log(log_data)
+            # 2. Sync Logs
+            if req.logs:
+                # a. Batch Database Save
+                db_logs = [
+                    ProjectLog(
+                        project_id=project_id,
+                        log_line=l.line,
+                        timestamp=l.timestamp or datetime.utcnow()
+                    ) for l in req.logs
+                ]
+                db.add_all(db_logs)
 
-            # 2. Analyze for intelligent charts and AI insights (Ollama Phi-3)
-            from app.services.log_chart_mapper import analyze_log_and_assign_chart
-            from app.ai.log_analyzer import analyze_log
-            from app.routes.ai_insights import add_insight
-            
-            chart_mapping = analyze_log_and_assign_chart(log_data)
-            
-            # Hook the new AI analyzer into the log collector
-            ai_result = await analyze_log(l.line)
-            
-            # Map into the DashboardTab.tsx expected structure for latestAI
-            explanation = {
-                "reason": ai_result.get("cause", "Unknown cause"),
-                "impact": ai_result.get("severity", "medium"),
-                "suggested_fix": ai_result.get("suggested_fix", "Check local backend configuration.")
-            }
-            
-            # Save for /api/ai-insights endpoint
-            add_insight(ai_result, l.line)
+                # b. Log Intelligence & Clustering Agent (Agent 1 & 2)
+                events_map = {}
+                START_MARKERS = ["error", "exception", "unhandled", "unexpected token", "failed to compile", "module not found", "typeerror", "referenceerror", "syntaxerror", "fatal", "critical", "timeout", "500", "400", "traceback", "internal server error"]
+                CONT_MARKERS = ["at ", "|", ">", "at JSX", "File:", "Plugin:", "line ", "^", "├──", "└──", "│", "      ", "    ", "  "]
+                
+                current_stack = []
+                last_ts = None
+                
+                for l in req.logs:
+                    line = l.line
+                    is_start = any(kw in line.lower() for kw in START_MARKERS) or any(line.strip().startswith(kw) for kw in ["Vite", "Webpack", "React", "Node.js"])
+                    is_cont = any(line.startswith(prefix) for prefix in CONT_MARKERS) or line.startswith(' ') or line.startswith('\t') or "^" in line
+                    
+                    if is_start or is_cont or (not line.strip() and current_stack):
+                        if not current_stack: last_ts = l.timestamp or datetime.utcnow()
+                        current_stack.append(line)
+                    else:
+                        if current_stack:
+                            txt = "\n".join(current_stack)
+                            key = txt[:100].lower().strip()
+                            if key in events_map: events_map[key]["count"] += 1
+                            else: events_map[key] = {"lines": current_stack, "timestamp": last_ts, "count": 1}
+                            current_stack = []
+                        key = line[:100].lower().strip()
+                        if key in events_map: events_map[key]["count"] += 1
+                        else: events_map[key] = {"lines": [line], "timestamp": l.timestamp or datetime.utcnow(), "count": 1}
+                
+                if current_stack:
+                    txt = "\n".join(current_stack)
+                    key = txt[:100].lower().strip()
+                    if key in events_map: events_map[key]["count"] += 1
+                    else: events_map[key] = {"lines": current_stack, "timestamp": last_ts, "count": 1}
 
-            # 3. Broadcast to all active sessions via management websocket
-            # We use "default_user" for now as per monitor_ws.py implementation
-            broadcast_payload = {
-                "type": "mapped_chart",
-                "mapping": chart_mapping,
-                "ai": explanation,
-                "log_line": l.line # Pass to live stream console too
-            }
-            
-            # Use asyncio to fire and forget the broadcast
-            import asyncio
-            from .monitor_ws import manager  # Deferred import to avoid circular dependency
-            
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                loop.create_task(manager.broadcast_to_user("default_user", broadcast_payload))
-                # Also broadcast the log itself for the Terminal console
-                loop.create_task(manager.broadcast_to_user("default_user", {
-                    "type": log_data["level"].lower(),
-                    "data": l.line
-                }))
+                grouped_events = list(events_map.values())
 
-    project.last_updated = datetime.utcnow()
-    db.commit()
-    return {"status": "success", "project_id": project.id}
+                # c. Process Grouped Events for Dashboard
+                import uuid
+                for i, event in enumerate(grouped_events):
+                    log_id = f"evt-{uuid.uuid4().hex[:12]}"
+                    full_block = "\n".join(event["lines"])
+                    
+                    # Rule 6: Detect SEVERITY
+                    severity = "INFO"
+                    full_lower = full_block.lower()
+                    if any(kw in full_lower for kw in ["fatal", "crash", "critical", "system failure"]):
+                        severity = "CRITICAL"
+                    elif any(kw in full_lower for kw in ["exception", "failed", "unexpected", "syntax error", "module not found", "error"]):
+                        severity = "ERROR"
+                    elif "warn" in full_lower or "deprecated" in full_lower or "retry" in full_lower:
+                        severity = "WARNING"
+                    
+                    # Rule 7: Extract Error Type
+                    error_type = "System Logic"
+                    affected_file = "N/A"
+                    if "syntax error" in full_lower or "unexpected token" in full_lower:
+                        error_type = "React/JS Syntax Error"
+                    elif "typeerror" in full_lower:
+                        error_type = "TypeError"
+                    elif "failed to compile" in full_lower:
+                        error_type = "Compilation Failure"
+                    
+                    file_match = _re.search(r'(?:File: |Plugin: |at |in )([A-Za-z]:\\[^: \n]+|/[^: \n]+)', full_block)
+                    if file_match:
+                        affected_file = file_match.group(1)
+
+                    log_data = {
+                        "level": severity,
+                        "line": full_block, 
+                        "timestamp": str(event["timestamp"]),
+                        "id": log_id,
+                        "error_type": error_type,
+                        "file": affected_file,
+                        "count": event.get("count", 1)
+                    }
+
+                    # a. Instant Terminal Broadcast
+                    asyncio.create_task(manager.broadcast_to_user("default_user", {
+                        "type": log_data["level"].lower(),
+                        "data": full_block,
+                        "id": log_id,
+                        "count": log_data["count"]
+                    }))
+
+                    # b. Fast Chart Mapping
+                    chart_mapping = analyze_log_and_assign_chart(log_data)
+                    metrics_engine.process_log(log_data)
+                    
+                    asyncio.create_task(manager.broadcast_to_user("default_user", {
+                        "type": "mapped_chart",
+                        "mapping": chart_mapping,
+                        "log_line": full_block,
+                        "log_id": log_id
+                    }))
+
+                    # c. Heavy AI Analysis (Ollama/LLM) 
+                    if log_data["level"] == "ERROR" or log_data["level"] == "CRITICAL" or i == len(grouped_events) - 1:
+                        async def run_slow_ai_task(full_text, is_err, pid, lid, cm, lcnt):
+                            try:
+                                # Pre-extract path for DB context
+                                f_path = "N/A"
+                                pm = _re.search(r'([A-Za-z]:\\[^: ]+|/[^: ]+)(\.jsx?|\.tsx?|\.py|\.js|\.ts)', full_text)
+                                file_context = None
+                                if pm:
+                                    f_path = pm.group(0)
+                                    with next(get_monitor_db()) as sub_db:
+                                        basename = f_path.split('\\')[-1].split('/')[-1]
+                                        pf = sub_db.query(ProjectFile).filter(ProjectFile.project_id == pid).filter(ProjectFile.file_path.like(f"%{basename}%")).first()
+                                        if pf: file_context = pf.content[:3000]
+
+                                from app.ai.log_analyzer import analyze_log
+                                from app.routes.ai_insights import add_insight
+                                
+                                ai_res = await analyze_log(full_text, file_context=file_context)
+                                
+                                # Requirement #8: Health Score Calculation Agent
+                                base_health = 100
+                                if ai_res.get("severity") == "CRITICAL": base_health -= 40
+                                elif ai_res.get("severity") == "ERROR": base_health -= 20
+                                if lcnt > 5: base_health -= 10
+                                health_score = max(0, base_health)
+
+                                ai_payload = {
+                                    "severity": ai_res.get("severity", "INFO"),
+                                    "cause": ai_res.get("root_cause") or ai_res.get("explanation") or "Logged.",
+                                    "impact": ai_res.get("impact", "Nominal."),
+                                    "suggested_fix": "; ".join(ai_res.get("fix_steps", [])) if isinstance(ai_res.get("fix_steps"), list) else ai_res.get("suggested_fix", "None."),
+                                    "system_status": ai_res.get("system_status", "HEALTHY") if ai_res.get("severity") == "INFO" else "DEGRADED",
+                                    "risk_level": ai_res.get("risk_level", f"{100-health_score}%"),
+                                    "severity_score": ai_res.get("severity_score", 0),
+                                    "health_score": health_score,
+                                    "confidence_score": ai_res.get("confidence_score", 0.85),
+                                    "error_type": ai_res.get("error_type", "Metric"),
+                                    "affected_file": ai_res.get("file_path") or ai_res.get("file") or f_path,
+                                    "line_number": ai_res.get("line"),
+                                    "code_snippet": ai_res.get("code_snippet"),
+                                    "generated_fix_code": ai_res.get("generated_fix_code"),
+                                    "analysis": ai_res
+                                }
+                                add_insight(ai_res, full_text)
+                                
+                                # Requirement #5 & #10: Chart Selection Sync
+                                suggested_chart = ai_res.get("chart_suggestion")
+                                final_cm = { **cm, "severity": ai_payload["severity"], "title": ai_res.get("error_type") or cm.get("title") }
+                                if suggested_chart and suggested_chart in analyze_log_and_assign_chart.__self__.CHART_TYPES if hasattr(analyze_log_and_assign_chart, "__self__") else True:
+                                    final_cm["chart_type"] = suggested_chart
+
+                                await manager.broadcast_to_user("default_user", {
+                                    "type": "mapped_chart",
+                                    "mapping": final_cm,
+                                    "ai": ai_payload, "log_line": full_text, "log_id": lid, "count": lcnt
+                                })
+                            except Exception as e:
+                                logger.error(f"BACKGROUND_AI_ERROR: {e}")
+
+                        asyncio.create_task(run_slow_ai_task(full_block, log_data["level"] in ["ERROR", "CRITICAL"], project_id, log_id, chart_mapping, log_data["count"]))
+
+            db.commit()
+            logger.info(f"Background sync complete for project {project_id}")
+        except Exception as e:
+            logger.error(f"BACKGROUND_SYNC_FATAL_ERROR: {e}")
+            db.rollback()
+        logger.error(f"SYNC_ERROR: {str(e)}")
+        # Don't return 500 if possible, return a JSON error so CLI can show it
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 
 @router.get("/projects/{user_id}")

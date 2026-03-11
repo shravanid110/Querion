@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_Base = 'http://localhost:4000/api';
+const API_Base = process.env.NEXT_PUBLIC_API_URL ? `${process.env.NEXT_PUBLIC_API_URL}/api` : 'http://127.0.0.1:4000/api';
 
 export const api = axios.create({
     baseURL: API_Base,
@@ -10,12 +10,14 @@ export const api = axios.create({
 });
 
 export interface ConnectionParams {
+    user_id?: string;
     name?: string;
     host: string;
     port: number;
     database: string;
     username: string;
     password?: string;
+    master_password?: string;
 }
 
 export const testConnection = async (params: ConnectionParams) => {
@@ -24,7 +26,7 @@ export const testConnection = async (params: ConnectionParams) => {
 };
 
 export const saveConnection = async (params: ConnectionParams) => {
-    const response = await api.post('/connections', params);
+    const response = await api.post('/connections/', params);
     return response.data;
 };
 
@@ -50,5 +52,15 @@ export const connectUrl = async (url: string) => {
 
 export const runUrlQuery = async (connectionId: string, prompt: string) => {
     const response = await api.post('/url/query', { connectionId, prompt });
+    return response.data;
+};
+
+export const verifyMasterPassword = async (connectionId: string, masterPassword: string) => {
+    const response = await api.post('/connections/verify-master-password', { connectionId, masterPassword });
+    return response.data;
+};
+
+export const getHistory = async () => {
+    const response = await api.get('/history');
     return response.data;
 };

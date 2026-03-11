@@ -145,55 +145,68 @@ export default function DashboardTab({ project, logs }: DashboardProps) {
 
     // --- Real-time Metrics Connection ---
     useEffect(() => {
-        const socket = new WebSocket('ws://localhost:4000/ws/monitor');
-
-        socket.onmessage = (event) => {
+        let isMounted = true;
+        const connect = () => {
+            if (!isMounted) return;
             try {
-                const data = JSON.parse(event.data);
-                if (data.type === 'real_metrics') {
-                    const m = data.metrics;
-                    setMetrics(prev => ({
-                        ...prev,
-                        cpu: [...prev.cpu.slice(1), m.cpu_usage],
-                        ram: [...prev.ram.slice(1), m.ram_usage],
-                        disk: m.disk_usage,
-                        uptime: m.server_uptime > 60
-                            ? `${Math.floor(m.server_uptime / 3600)}h ${Math.floor((m.server_uptime % 3600) / 60)}m`
-                            : `${m.server_uptime}s`,
-                        rps: [...prev.rps.slice(1), m.requests_per_second],
-                        statusCodes: {
-                            ...prev.statusCodes,
-                            ...m.status_codes
-                        },
-                        dbConnections: m.database.active_connections,
-                        activeUsers: m.users.active_users,
-                        latency: [...prev.latency.slice(1), (m.database.query_time || Math.floor(Math.random() * 50 + 10))]
-                    }));
+                const socket = new WebSocket('ws://localhost:4000/ws/monitor');
 
-                    // Real-time critical detection
-                    const hasHighErrors = m.error_rate > 0 || (m.status_codes && m.status_codes['500'] > 0);
-                    if (m.cpu_usage > 85 || hasHighErrors) setSystemState('critical');
-                    else if (m.cpu_usage > 70 || m.warning_count > 0) setSystemState('warning');
-                    else setSystemState('normal');
-                } else if (data.type === 'mapped_chart') {
-                    if (data.ai) {
-                        setLatestAI(data.ai);
+                socket.onmessage = (event) => {
+                    if (!isMounted) return;
+                    try {
+                        const data = JSON.parse(event.data);
+                        if (data.type === 'real_metrics') {
+                            const m = data.metrics;
+                            setMetrics(prev => ({
+                                ...prev,
+                                cpu: [...prev.cpu.slice(1), m.cpu_usage],
+                                ram: [...prev.ram.slice(1), m.ram_usage],
+                                disk: m.disk_usage,
+                                uptime: m.server_uptime > 60
+                                    ? `${Math.floor(m.server_uptime / 3600)}h ${Math.floor((m.server_uptime % 3600) / 60)}m`
+                                    : `${m.server_uptime}s`,
+                                rps: [...prev.rps.slice(1), m.requests_per_second],
+                                statusCodes: {
+                                    ...prev.statusCodes,
+                                    ...m.status_codes
+                                },
+                                dbConnections: m.database.active_connections,
+                                activeUsers: m.users.active_users,
+                                latency: [...prev.latency.slice(1), (m.database.query_time || Math.floor(Math.random() * 50 + 10))]
+                            }));
+
+                            // Real-time critical detection
+                            const hasHighErrors = m.error_rate > 0 || (m.status_codes && m.status_codes['500'] > 0);
+                            if (m.cpu_usage > 85 || hasHighErrors) setSystemState('critical');
+                            else if (m.cpu_usage > 70 || m.warning_count > 0) setSystemState('warning');
+                            else setSystemState('normal');
+                        } else if (data.type === 'mapped_chart') {
+                            if (data.ai) {
+                                setLatestAI(data.ai);
+                            }
+                            if (data.mapping?.severity === 'CRITICAL') setSystemState('critical');
+                            else if (data.mapping?.severity === 'WARNING') setSystemState('warning');
+                        } else if (['info', 'error', 'warning', 'debug', 'critical'].includes(data.type)) {
+                            // Add to live stream
+                            setLiveStream(prev => [data, ...prev].slice(0, 50));
+                            // Immediate visual feedback for errors
+                            if (['error', 'critical'].includes(data.type)) setSystemState('critical');
+                            else if (data.type === 'warning' && systemState !== 'critical') setSystemState('warning');
+                        }
+                    } catch (err) {
+                        console.error("Dashboard metrics socket parse error:", err);
                     }
-                    if (data.mapping?.severity === 'CRITICAL') setSystemState('critical');
-                    else if (data.mapping?.severity === 'WARNING') setSystemState('warning');
-                } else if (['info', 'error', 'warning', 'debug'].includes(data.type)) {
-                    // Add to live stream
-                    setLiveStream(prev => [data, ...prev].slice(0, 50));
-                    // Immediate visual feedback for errors
-                    if (data.type === 'error') setSystemState('critical');
-                    else if (data.type === 'warning' && systemState !== 'critical') setSystemState('warning');
-                }
+                };
+
+                socket.onclose = () => { if (isMounted) setTimeout(connect, 4000); };
+                socket.onerror = () => { socket.close(); };
             } catch (err) {
-                console.error("Dashboard metrics socket error:", err);
+                if (isMounted) setTimeout(connect, 4000);
             }
         };
 
-        return () => socket.close();
+        connect();
+        return () => { isMounted = false; };
     }, []);
 
     // --- Dynamic Layout Logic ---
@@ -523,13 +536,15 @@ export default function DashboardTab({ project, logs }: DashboardProps) {
                                         </div>
                                     ) : (
                                         liveStream.map((log, i) => (
-                                            <div key={i} className="flex gap-3 animate-in fade-in slide-in-from-left-2 duration-300">
+                                            <div key={i} className="flex gap-3 animate-in fade-in slide-in-from-left-2 duration-300 border-b border-slate-800/10 pb-1 last:border-0">
                                                 <span className="text-slate-600 shrink-0 select-none opacity-50 font-mono">[{new Date().toLocaleTimeString()}]</span>
                                                 <span className={cn(
                                                     "font-black uppercase shrink-0 w-12",
-                                                    log.type === 'error' ? 'text-red-500' : log.type === 'warning' ? 'text-amber-500' : 'text-indigo-500'
+                                                    ['error', 'critical'].includes(log.type) ? 'text-red-500' : log.type === 'warning' ? 'text-amber-500' : 'text-indigo-500'
                                                 )}>{log.type}</span>
-                                                <span className="text-slate-300 truncate font-medium">{log.data || log.log_line}</span>
+                                                <span className="text-slate-300 whitespace-pre-wrap font-mono leading-relaxed break-words flex-1">
+                                                    {log.data || log.log_line}
+                                                </span>
                                             </div>
                                         ))
                                     )}

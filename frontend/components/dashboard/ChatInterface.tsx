@@ -9,16 +9,23 @@ interface ChatInterfaceProps {
     isThinking?: boolean;
     generatedSql?: string | null;
     explanation?: string | null;
+    initialQuery?: string;
 }
 
-export const ChatInterface = ({ onSearch, isThinking = false, generatedSql, explanation }: ChatInterfaceProps) => {
-    const [query, setQuery] = useState('');
+export const ChatInterface = ({ onSearch, isThinking = false, generatedSql, explanation, initialQuery = '' }: ChatInterfaceProps) => {
+    const [query, setQuery] = useState(initialQuery);
     const [showSql, setShowSql] = useState(false);
 
     // Auto-show SQL when valid one arrives
     useEffect(() => {
         if (generatedSql) setShowSql(true);
     }, [generatedSql]);
+
+    useEffect(() => {
+        if (initialQuery) {
+            setQuery(initialQuery);
+        }
+    }, [initialQuery]);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();

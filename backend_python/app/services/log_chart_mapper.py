@@ -14,14 +14,19 @@ class SeverityDetector:
         level = (log.get("level") or log.get("type") or "INFO").upper()
         status_code = log.get("status_code")
         message = (log.get("message") or log.get("data") or "").lower()
+        count = log.get("count", 1)
 
-        if level == "ERROR" or (status_code and str(status_code).startswith("5")):
-            return SeverityDetector.CRITICAL
-        
-        if "critical" in message or "timeout" in message or "failure" in message or "deadlock" in message:
+        if "unexpected token" in message or "syntax error" in message or "internal server error" in message or "failed to compile" in message:
             return SeverityDetector.CRITICAL
             
-        if level == "WARNING" or (status_code and str(status_code).startswith("4")):
+        if "critical" in message or "timeout" in message or "failure" in message or "deadlock" in message or "exception" in message:
+            return SeverityDetector.CRITICAL
+            
+        # Frequency-based boosting (Agent 4)
+        if count > 10 and ("fail" in message or "error" in message):
+            return SeverityDetector.CRITICAL
+
+        if level == "WARNING" or (status_code and str(status_code).startswith("4")) or count > 5:
             return SeverityDetector.WARNING
             
         if "slow" in message or "retry" in message or "deprecated" in message:
@@ -43,13 +48,24 @@ class ChartMapper:
     """Maps logs to specific chart configurations based on predefined rules."""
     
     CHART_TYPES = [
-        "radialGauge", "ring", "gauge", "counter", "lineChart", 
-        "ringChart", "donutChart", "horizontalBarChart", "liveTable",
-        "pieChart", "barChart", "logStream", "ramRingRed", "cpuGaugeRed",
-        "logConsole", "criticalBadge", "timelineGraph", "logTable", 
-        "storageRing", "errorTable", "stackTraceViewer", "redisRing",
-        "spikeLine", "securityTable", "securityBarChart", "flashingCounter",
-        "criticalAlertPanel"
+        # Basic
+        "lineChart", "barChart", "areaChart", "scatterPlot", "bubbleChart",
+        # Comparison
+        "groupedBarChart", "divergingBar", "dotPlot",
+        # Distribution
+        "histogram", "boxPlot", "densityPlot",
+        # Part-to-Whole
+        "pieChart", "donutChart", "treemap", "sunburst", "waterfall",
+        # Relationship (Advanced)
+        "networkGraph", "chordDiagram", "sankeyDiagram", "forceDirected",
+        # Time Series
+        "timeSeriesLine", "stepLine", "candlestick",
+        # System Monitoring
+        "gauge", "progressRing", "kpiCard", "sparkline", "liveLogStream",
+        # Elite Visuals
+        "heatmap", "calendarHeatmap", "threeDScatter", "threeDSurface", "streamGraph",
+        # Legacy/Internal
+        "radialGauge", "ring", "ringChart"
     ]
 
     @staticmethod
@@ -58,6 +74,20 @@ class ChartMapper:
         service = (log.get("service") or "").lower()
         status_code = str(log.get("status_code", ""))
         
+        # ── CORE ARCHITECTURE MAPPING (Agent 5) ──
+        if "spike" in message or "traffic" in message:
+            return {"chart_type": "lineChart", "panel": "API_TRAFFIC", "title": "Traffic Leak", "metric_type": "load"}
+        if "distribution" in message or "breakdown" in message:
+            return {"chart_type": "pieChart", "panel": "ANALYTICS", "title": "Error Distribution", "metric_type": "grouping"}
+        if "dependency" in message or "service chain" in message:
+            return {"chart_type": "sankeyDiagram", "panel": "SYSTEM_HEALTH", "title": "Service Dependency", "metric_type": "topology"}
+        if "density" in message or "load intensity" in message:
+            return {"chart_type": "heatmap", "panel": "INFRASTRUCTURE", "title": "Resource Density", "metric_type": "intensity"}
+        if "history" in message:
+            return {"chart_type": "calendarHeatmap", "panel": "ANALYTICS", "title": "Event History", "metric_type": "temporal"}
+        if "stack trace" in message or "error call" in message:
+            return {"chart_type": "waterfall", "panel": "APPLICATION_LOGS", "title": "Call Stack Trace", "metric_type": "debug"}
+
         # ── DATABASE & PERFORMANCE ──
         if "db timeout" in message or "database timeout" in message:
             return {"chart_type": "gauge", "panel": "DATABASE_MONITORING", "title": "DB Timeout", "metric_type": "connection"}
@@ -169,6 +199,8 @@ class ChartMapper:
             return {"chart_type": "logViewer", "panel": "APPLICATION_LOGS", "title": "Config Error", "metric_type": "env_error"}
         if "environment variable" in message and "missing" in message:
             return {"chart_type": "logViewer", "panel": "APPLICATION_LOGS", "title": "Env Var Missing", "metric_type": "env_error"}
+        if "unexpected token" in message or "syntax error" in message or "syntaxerror" in message:
+            return {"chart_type": "stackTrace", "panel": "APPLICATION_LOGS", "title": "Syntax Error", "metric_type": "compilation_failure"}
         if "high error rate" in message:
             return {"chart_type": "ring", "panel": "APPLICATION_LOGS", "title": "High Error Rate", "metric_type": "health_score"}
 
@@ -247,6 +279,13 @@ class AIInsightGenerator:
                 "reason": "Unexpected application failure",
                 "impact": "Reduced service availability",
                 "suggested_fix": "Check stack trace and recent code deployments"
+            }
+
+        if "unexpected token" in message or "syntax error" in message or "failed to compile" in message:
+            return {
+                "reason": "Critical Syntax or Compilation Error detected in the project build pipeline.",
+                "impact": "HIGH: The application UI will fail to render. Compilation is blocked, preventing any updates to the user.",
+                "suggested_fix": "Identify the variable typo or missing symbol (e.g. check for a space in 'setStudents' or a missing comma). Fix the source file and save to trigger a clean HMR update."
             }
 
         return {

@@ -893,280 +893,276 @@ export default function MonitoringPage() {
                         </div>
 
                         {/* ── Chat Tab ── */}
-                        {activeTab === "chat" && (
-                            <div className="flex-1 flex flex-col min-h-0">
-                                <div className="flex-1 overflow-y-auto p-5 space-y-4">
-                                    {messages.length === 0 && (
-                                        <div className="h-full flex flex-col items-center justify-center text-center py-12 text-slate-600">
-                                            <Cpu className="h-12 w-12 mb-4 text-slate-700" />
-                                            <p className="text-lg font-semibold text-slate-500 mb-2">
-                                                Ask anything about {selectedProject.name}
-                                            </p>
-                                            <p className="text-sm max-w-sm text-slate-600">
-                                                Examples: "Explain my login flow", "Why is this endpoint
-                                                slow?", "What does my middleware do?"
-                                            </p>
-                                            <div className="mt-4 flex items-center gap-2 text-slate-600 text-xs">
-                                                <Mic className="h-4 w-4 text-indigo-500" />
-                                                <span>Or tap the mic button to speak in any language — it auto-translates to English</span>
-                                            </div>
-                                            <div className="mt-6 flex flex-wrap gap-2 justify-center">
-                                                {[
-                                                    "Explain my login flow",
-                                                    "Find errors in recent logs",
-                                                    "Summarize recent file changes",
-                                                    "How does my middleware work?",
-                                                ].map((ex) => (
-                                                    <button
-                                                        key={ex}
-                                                        onClick={() => setInput(ex)}
-                                                        className="text-xs px-3 py-1.5 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 border border-slate-700 transition-colors"
-                                                    >
-                                                        {ex}
-                                                    </button>
-                                                ))}
-                                            </div>
+                        <div className={activeTab === "chat" ? "flex-1 flex flex-col min-h-0" : "hidden"}>
+                            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+                                {messages.length === 0 && (
+                                    <div className="h-full flex flex-col items-center justify-center text-center py-12 text-slate-600">
+                                        <Cpu className="h-12 w-12 mb-4 text-slate-700" />
+                                        <p className="text-lg font-semibold text-slate-500 mb-2">
+                                            Ask anything about {selectedProject.name}
+                                        </p>
+                                        <p className="text-sm max-w-sm text-slate-600">
+                                            Examples: "Explain my login flow", "Why is this endpoint
+                                            slow?", "What does my middleware do?"
+                                        </p>
+                                        <div className="mt-4 flex items-center gap-2 text-slate-600 text-xs">
+                                            <Mic className="h-4 w-4 text-indigo-500" />
+                                            <span>Or tap the mic button to speak in any language — it auto-translates to English</span>
                                         </div>
-                                    )}
-                                    {messages.map((m, i) => (
+                                        <div className="mt-6 flex flex-wrap gap-2 justify-center">
+                                            {[
+                                                "Explain my login flow",
+                                                "Find errors in recent logs",
+                                                "Summarize recent file changes",
+                                                "How does my middleware work?",
+                                            ].map((ex) => (
+                                                <button
+                                                    key={ex}
+                                                    onClick={() => setInput(ex)}
+                                                    className="text-xs px-3 py-1.5 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 border border-slate-700 transition-colors"
+                                                >
+                                                    {ex}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                                {messages.map((m, i) => (
+                                    <div
+                                        key={i}
+                                        className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
+                                    >
                                         <div
-                                            key={i}
-                                            className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
+                                            className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${m.role === "user"
+                                                ? "bg-indigo-600 text-white"
+                                                : "bg-slate-800/90 border border-slate-700/60"
+                                                }`}
                                         >
-                                            <div
-                                                className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${m.role === "user"
-                                                    ? "bg-indigo-600 text-white"
-                                                    : "bg-slate-800/90 border border-slate-700/60"
-                                                    }`}
-                                            >
-                                                {m.role === "assistant" && (
-                                                    <div className="flex items-center gap-2 mb-2">
-                                                        <div className="w-5 h-5 rounded-full bg-indigo-600/30 flex items-center justify-center">
-                                                            <Cpu className="h-3 w-3 text-indigo-400" />
-                                                        </div>
-                                                        <p className="text-cyan-400 font-bold text-xs uppercase tracking-wider">Querion AI</p>
-                                                    </div>
-                                                )}
-                                                {m.role === "assistant" ? (
-                                                    <MarkdownRenderer content={m.content} />
-                                                ) : (
-                                                    <p className="whitespace-pre-wrap">{m.content}</p>
-                                                )}
-                                                <div className="flex items-center justify-between gap-3 mt-3 pt-2 border-t border-slate-700/30">
-                                                    <div className="flex items-center gap-2">
-                                                        {m.role === "assistant" && (
-                                                            <button
-                                                                onClick={() => speakText(m.content)}
-                                                                className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 hover:text-indigo-300 transition-all border border-indigo-500/20 group"
-                                                                title="Listen to response"
-                                                            >
-                                                                <Volume2 className="h-3.5 w-3.5" />
-                                                                <span className="text-[10px] font-semibold uppercase tracking-wider">Listen</span>
-                                                            </button>
-                                                        )}
-                                                        {m.role === "assistant" && (
-                                                            <button
-                                                                onClick={() => window.speechSynthesis.cancel()}
-                                                                className="p-1.5 rounded-lg hover:bg-slate-700 text-slate-500 hover:text-slate-300 transition-colors"
-                                                                title="Stop reading"
-                                                            >
-                                                                <div className="w-2.5 h-2.5 bg-current rounded-sm" />
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                    <p className="text-[10px] opacity-40 font-mono tracking-tight">{fmtTime(m.ts)}</p>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ))}
-                                    {sending && (
-                                        <div className="flex justify-start">
-                                            <div className="bg-slate-800 border border-slate-700/60 rounded-2xl px-4 py-3 text-sm">
+                                            {m.role === "assistant" && (
                                                 <div className="flex items-center gap-2 mb-2">
                                                     <div className="w-5 h-5 rounded-full bg-indigo-600/30 flex items-center justify-center">
                                                         <Cpu className="h-3 w-3 text-indigo-400" />
                                                     </div>
-                                                    <p className="text-cyan-400 font-bold text-xs">Querion AI</p>
+                                                    <p className="text-cyan-400 font-bold text-xs uppercase tracking-wider">Querion AI</p>
                                                 </div>
-                                                <div className="flex gap-1 items-center py-1">
-                                                    <span className="h-2 w-2 bg-indigo-400 rounded-full animate-bounce [animation-delay:-0.3s]" />
-                                                    <span className="h-2 w-2 bg-indigo-400 rounded-full animate-bounce [animation-delay:-0.15s]" />
-                                                    <span className="h-2 w-2 bg-indigo-400 rounded-full animate-bounce" />
+                                            )}
+                                            {m.role === "assistant" ? (
+                                                <MarkdownRenderer content={m.content} />
+                                            ) : (
+                                                <p className="whitespace-pre-wrap">{m.content}</p>
+                                            )}
+                                            <div className="flex items-center justify-between gap-3 mt-3 pt-2 border-t border-slate-700/30">
+                                                <div className="flex items-center gap-2">
+                                                    {m.role === "assistant" && (
+                                                        <button
+                                                            onClick={() => speakText(m.content)}
+                                                            className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 hover:text-indigo-300 transition-all border border-indigo-500/20 group"
+                                                            title="Listen to response"
+                                                        >
+                                                            <Volume2 className="h-3.5 w-3.5" />
+                                                            <span className="text-[10px] font-semibold uppercase tracking-wider">Listen</span>
+                                                        </button>
+                                                    )}
+                                                    {m.role === "assistant" && (
+                                                        <button
+                                                            onClick={() => window.speechSynthesis.cancel()}
+                                                            className="p-1.5 rounded-lg hover:bg-slate-700 text-slate-500 hover:text-slate-300 transition-colors"
+                                                            title="Stop reading"
+                                                        >
+                                                            <div className="w-2.5 h-2.5 bg-current rounded-sm" />
+                                                        </button>
+                                                    )}
                                                 </div>
+                                                <p className="text-[10px] opacity-40 font-mono tracking-tight">{fmtTime(m.ts)}</p>
                                             </div>
                                         </div>
-                                    )}
-                                    <div ref={chatEndRef} />
-                                </div>
-
-                                {/* ── Input Area with Mic ── */}
-                                <div className="p-4 border-t border-slate-800 bg-slate-900">
-                                    {/* Voice status badge */}
-                                    {voiceStatus !== "idle" && (
-                                        <div className="flex justify-center mb-2">
-                                            <VoiceBadge lang={voiceLang} status={voiceStatus} />
+                                    </div>
+                                ))}
+                                {sending && (
+                                    <div className="flex justify-start">
+                                        <div className="bg-slate-800 border border-slate-700/60 rounded-2xl px-4 py-3 text-sm">
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <div className="w-5 h-5 rounded-full bg-indigo-600/30 flex items-center justify-center">
+                                                    <Cpu className="h-3 w-3 text-indigo-400" />
+                                                </div>
+                                                <p className="text-cyan-400 font-bold text-xs">Querion AI</p>
+                                            </div>
+                                            <div className="flex gap-1 items-center py-1">
+                                                <span className="h-2 w-2 bg-indigo-400 rounded-full animate-bounce [animation-delay:-0.3s]" />
+                                                <span className="h-2 w-2 bg-indigo-400 rounded-full animate-bounce [animation-delay:-0.15s]" />
+                                                <span className="h-2 w-2 bg-indigo-400 rounded-full animate-bounce" />
+                                            </div>
                                         </div>
-                                    )}
+                                    </div>
+                                )}
+                                <div ref={chatEndRef} />
+                            </div>
 
-                                    <div className="flex gap-2 items-end">
-                                        {/* Mic button and Language selector */}
-                                        <div className="flex flex-col gap-1.5 flex-shrink-0">
-                                            <select
-                                                value={selectedLanguage}
-                                                onChange={(e) => setSelectedLanguage(e.target.value)}
-                                                className="bg-slate-800 border border-slate-700 text-[10px] text-slate-300 rounded-lg px-2 py-1 outline-none focus:border-indigo-500 transition-colors cursor-pointer"
-                                                title="Speaking language hint"
-                                            >
-                                                {LANGUAGES.map((l) => (
-                                                    <option key={l.code} value={l.code}>
-                                                        {l.name}
-                                                    </option>
-                                                ))}
-                                            </select>
+                            {/* ── Input Area with Mic ── */}
+                            <div className="p-4 border-t border-slate-800 bg-slate-900">
+                                {/* Voice status badge */}
+                                {voiceStatus !== "idle" && (
+                                    <div className="flex justify-center mb-2">
+                                        <VoiceBadge lang={voiceLang} status={voiceStatus} />
+                                    </div>
+                                )}
 
-                                            <button
-                                                id="voice-mic-btn"
-                                                onClick={toggleRecording}
-                                                disabled={voiceStatus === "processing"}
-                                                title={voiceStatus === "recording" ? "Stop recording" : "Start voice input"}
-                                                className={`p-3 rounded-xl flex-shrink-0 transition-all duration-200 ${voiceStatus === "recording"
-                                                    ? "bg-red-500 hover:bg-red-600 text-white animate-pulse ring-2 ring-red-400/50"
-                                                    : voiceStatus === "processing"
-                                                        ? "bg-amber-500/20 text-amber-400 cursor-wait"
-                                                        : "bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-indigo-400 border border-slate-700 hover:border-indigo-500"
-                                                    }`}
-                                            >
-                                                {voiceStatus === "recording" ? (
-                                                    <MicOff className="h-4 w-4" />
-                                                ) : voiceStatus === "processing" ? (
-                                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                                ) : (
-                                                    <Mic className="h-4 w-4" />
-                                                )}
-                                            </button>
-                                        </div>
-
-                                        <textarea
-                                            id="chat-input"
-                                            rows={2}
-                                            value={input}
-                                            onChange={(e) => setInput(e.target.value)}
-                                            onKeyDown={(e) => {
-                                                if (e.key === "Enter" && !e.shiftKey) {
-                                                    e.preventDefault();
-                                                    sendMessage();
-                                                }
-                                            }}
-                                            placeholder={
-                                                voiceStatus === "recording"
-                                                    ? "🔴 Listening… click mic to stop"
-                                                    : `Ask about ${selectedProject.name}… (Enter to send, or 🎤 for voice)`
-                                            }
-                                            className="flex-1 bg-slate-800 border border-slate-700 focus:border-indigo-500 rounded-xl px-4 py-3 text-sm text-slate-200 placeholder-slate-600 resize-none outline-none transition-colors"
-                                        />
-                                        <button
-                                            id="chat-send-btn"
-                                            onClick={() => sendMessage()}
-                                            disabled={sending || !input.trim()}
-                                            className="p-3.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl text-white transition-colors flex-shrink-0"
+                                <div className="flex gap-2 items-end">
+                                    {/* Mic button and Language selector */}
+                                    <div className="flex flex-col gap-1.5 flex-shrink-0">
+                                        <select
+                                            value={selectedLanguage}
+                                            onChange={(e) => setSelectedLanguage(e.target.value)}
+                                            className="bg-slate-800 border border-slate-700 text-[10px] text-slate-300 rounded-lg px-2 py-1 outline-none focus:border-indigo-500 transition-colors cursor-pointer"
+                                            title="Speaking language hint"
                                         >
-                                            <Send className="h-4 w-4" />
+                                            {LANGUAGES.map((l) => (
+                                                <option key={l.code} value={l.code}>
+                                                    {l.name}
+                                                </option>
+                                            ))}
+                                        </select>
+
+                                        <button
+                                            id="voice-mic-btn"
+                                            onClick={toggleRecording}
+                                            disabled={voiceStatus === "processing"}
+                                            title={voiceStatus === "recording" ? "Stop recording" : "Start voice input"}
+                                            className={`p-3 rounded-xl flex-shrink-0 transition-all duration-200 ${voiceStatus === "recording"
+                                                ? "bg-red-500 hover:bg-red-600 text-white animate-pulse ring-2 ring-red-400/50"
+                                                : voiceStatus === "processing"
+                                                    ? "bg-amber-500/20 text-amber-400 cursor-wait"
+                                                    : "bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-indigo-400 border border-slate-700 hover:border-indigo-500"
+                                                }`}
+                                        >
+                                            {voiceStatus === "recording" ? (
+                                                <MicOff className="h-4 w-4" />
+                                            ) : voiceStatus === "processing" ? (
+                                                <Loader2 className="h-4 w-4 animate-spin" />
+                                            ) : (
+                                                <Mic className="h-4 w-4" />
+                                            )}
                                         </button>
                                     </div>
 
-                                    <p className="text-xs text-slate-700 mt-2 text-center">
-                                        🎤 Voice supports 100+ languages · auto-translates to English · powered by Whisper
-                                    </p>
+                                    <textarea
+                                        id="chat-input"
+                                        rows={2}
+                                        value={input}
+                                        onChange={(e) => setInput(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === "Enter" && !e.shiftKey) {
+                                                e.preventDefault();
+                                                sendMessage();
+                                            }
+                                        }}
+                                        placeholder={
+                                            voiceStatus === "recording"
+                                                ? "🔴 Listening… click mic to stop"
+                                                : `Ask about ${selectedProject.name}… (Enter to send, or 🎤 for voice)`
+                                        }
+                                        className="flex-1 bg-slate-800 border border-slate-700 focus:border-indigo-500 rounded-xl px-4 py-3 text-sm text-slate-200 placeholder-slate-600 resize-none outline-none transition-colors"
+                                    />
+                                    <button
+                                        id="chat-send-btn"
+                                        onClick={() => sendMessage()}
+                                        disabled={sending || !input.trim()}
+                                        className="p-3.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl text-white transition-colors flex-shrink-0"
+                                    >
+                                        <Send className="h-4 w-4" />
+                                    </button>
                                 </div>
+
+                                <p className="text-xs text-slate-700 mt-2 text-center">
+                                    🎤 Voice supports 100+ languages · auto-translates to English · powered by Whisper
+                                </p>
                             </div>
-                        )}
+                        </div>
 
                         {/* ── Dashboard Tab ── */}
-                        {activeTab === "dashboard" && selectedProject && (
-                            <DashboardTab project={selectedProject} logs={logs} />
-                        )}
+                        <div className={activeTab === "dashboard" ? "flex-1 overflow-y-auto" : "hidden"}>
+                            {selectedProject && (
+                                <DashboardTab project={selectedProject} logs={logs} />
+                            )}
+                        </div>
 
                         {/* ── Logs Tab ── */}
-                        {activeTab === "logs" && (
-                            <div className="flex-1 overflow-y-auto bg-slate-950 font-mono text-xs p-4 space-y-0.5">
-                                {logs.length === 0 ? (
-                                    <div className="flex flex-col items-center justify-center h-full text-slate-700">
-                                        <Terminal className="h-10 w-10 mb-3" />
-                                        <p>No logs captured yet.</p>
-                                        <p className="mt-1 text-slate-800">
-                                            Run your app with: <span className="text-cyan-800">python app.py | querion watch --project "{selectedProject.name}"</span>
-                                        </p>
+                        <div className={activeTab === "logs" ? "flex-1 overflow-y-auto bg-slate-950 font-mono text-xs p-4 space-y-0.5" : "hidden"}>
+                            {logs.length === 0 ? (
+                                <div className="flex flex-col items-center justify-center h-full text-slate-700">
+                                    <Terminal className="h-10 w-10 mb-3" />
+                                    <p>No logs captured yet.</p>
+                                    <p className="mt-1 text-slate-800">
+                                        Run your app with: <span className="text-cyan-800">python app.py | querion watch --project "{selectedProject.name}"</span>
+                                    </p>
+                                </div>
+                            ) : (
+                                logs.map((l, i) => (
+                                    <div key={i} className="flex gap-3 py-0.5 hover:bg-slate-900/50 px-2 rounded">
+                                        <span className="text-slate-700 flex-shrink-0 select-none">
+                                            {fmtTime(l.timestamp)}
+                                        </span>
+                                        <span
+                                            className={
+                                                l.log_line.toLowerCase().includes("error") ||
+                                                    l.log_line.toLowerCase().includes("exception")
+                                                    ? "text-red-400"
+                                                    : l.log_line.toLowerCase().includes("warn")
+                                                        ? "text-yellow-400"
+                                                        : "text-slate-400"
+                                            }
+                                        >
+                                            {l.log_line}
+                                        </span>
                                     </div>
-                                ) : (
-                                    logs.map((l, i) => (
-                                        <div key={i} className="flex gap-3 py-0.5 hover:bg-slate-900/50 px-2 rounded">
-                                            <span className="text-slate-700 flex-shrink-0 select-none">
-                                                {fmtTime(l.timestamp)}
-                                            </span>
-                                            <span
-                                                className={
-                                                    l.log_line.toLowerCase().includes("error") ||
-                                                        l.log_line.toLowerCase().includes("exception")
-                                                        ? "text-red-400"
-                                                        : l.log_line.toLowerCase().includes("warn")
-                                                            ? "text-yellow-400"
-                                                            : "text-slate-400"
-                                                }
-                                            >
-                                                {l.log_line}
-                                            </span>
-                                        </div>
-                                    ))
-                                )}
-                                <div ref={logsEndRef} />
-                            </div>
-                        )}
+                                ))
+                            )}
+                            <div ref={logsEndRef} />
+                        </div>
 
                         {/* ── Files Tab ── */}
-                        {activeTab === "files" && (
-                            <div className="flex-1 flex min-h-0">
-                                {/* File list */}
-                                <div className="w-56 flex-shrink-0 border-r border-slate-800 overflow-y-auto py-2">
-                                    {files.length === 0 ? (
-                                        <p className="px-4 py-3 text-xs text-slate-600 italic">No files synced yet.</p>
-                                    ) : (
-                                        files.map((f) => {
-                                            const filename = f.file_path.split(/[\\\/]/).pop() || f.file_path;
-                                            const isSelected = selectedFile === f.file_path;
-                                            return (
-                                                <button
-                                                    key={f.file_path}
-                                                    onClick={() => setSelectedFile(f.file_path)}
-                                                    className={`w-full text-left flex items-center gap-2 px-3 py-2 text-xs transition-colors ${isSelected
-                                                        ? "bg-indigo-600/20 text-indigo-300"
-                                                        : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
-                                                        }`}
-                                                >
-                                                    <FileCode className="h-3.5 w-3.5 flex-shrink-0 shrink-0" />
-                                                    <span className="truncate max-w-[140px]">{filename}</span>
-                                                </button>
-                                            );
-                                        })
-                                    )}
-                                </div>
-                                {/* File content */}
-                                <div className="flex-1 overflow-auto bg-slate-950 p-5">
-                                    {selectedFile ? (
-                                        <>
-                                            <p className="text-xs text-slate-600 mb-3 font-mono">{selectedFile}</p>
-                                            <pre className="text-xs text-slate-300 font-mono whitespace-pre-wrap leading-relaxed">
-                                                {selectedFileContent || "Loading..."}
-                                            </pre>
-                                        </>
-                                    ) : (
-                                        <div className="flex flex-col items-center justify-center h-full text-slate-700">
-                                            <FileCode className="h-10 w-10 mb-3" />
-                                            <p>Select a file from the panel to view its content.</p>
-                                        </div>
-                                    )}
-                                </div>
+                        <div className={activeTab === "files" ? "flex-1 flex min-h-0" : "hidden"}>
+                            {/* File list */}
+                            <div className="w-56 flex-shrink-0 border-r border-slate-800 overflow-y-auto py-2">
+                                {files.length === 0 ? (
+                                    <p className="px-4 py-3 text-xs text-slate-600 italic">No files synced yet.</p>
+                                ) : (
+                                    files.map((f) => {
+                                        const filename = f.file_path.split(/[\\\/]/).pop() || f.file_path;
+                                        const isSelected = selectedFile === f.file_path;
+                                        return (
+                                            <button
+                                                key={f.file_path}
+                                                onClick={() => setSelectedFile(f.file_path)}
+                                                className={`w-full text-left flex items-center gap-2 px-3 py-2 text-xs transition-colors ${isSelected
+                                                    ? "bg-indigo-600/20 text-indigo-300"
+                                                    : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+                                                    }`}
+                                            >
+                                                <FileCode className="h-3.5 w-3.5 flex-shrink-0 shrink-0" />
+                                                <span className="truncate max-w-[140px]">{filename}</span>
+                                            </button>
+                                        );
+                                    })
+                                )}
                             </div>
-                        )}
+                            {/* File content */}
+                            <div className="flex-1 overflow-auto bg-slate-950 p-5">
+                                {selectedFile ? (
+                                    <>
+                                        <p className="text-xs text-slate-600 mb-3 font-mono">{selectedFile}</p>
+                                        <pre className="text-xs text-slate-300 font-mono whitespace-pre-wrap leading-relaxed">
+                                            {selectedFileContent || "Loading..."}
+                                        </pre>
+                                    </>
+                                ) : (
+                                    <div className="flex flex-col items-center justify-center h-full text-slate-700">
+                                        <FileCode className="h-10 w-10 mb-3" />
+                                        <p>Select a file from the panel to view its content.</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
                     </div>
                 </div>
             )}

@@ -11,12 +11,27 @@ import {
 import * as echarts from 'echarts';
 
 /* ─── Types ─────────────────────────────────────────────────────────────────── */
-type Severity = 'CRITICAL' | 'WARNING' | 'MINOR' | 'HEALTHY';
+type Severity = 'CRITICAL' | 'ERROR' | 'WARNING' | 'MINOR' | 'INFO' | 'HEALTHY';
 
-interface AgentInsight { reason: string; impact: string; suggested_fix: string; }
+interface AgentInsight {
+    cause: string;
+    impact: string;
+    suggested_fix: string;
+    system_status?: 'HEALTHY' | 'UNSTABLE' | 'RISK';
+    risk_level?: string;
+    severity_score?: number;
+    error_type?: string;
+    affected_file?: string;
+    severity?: string;
+    line_number?: string | number;
+    code_snippet?: string;
+    generated_fix_code?: string;
+    explanation?: string;
+}
 interface ChartMapping {
     chart_type: string; panel: string; title: string; severity: string;
     description?: string; metric_type?: string; recommended_color?: string;
+    cause?: string;
 }
 interface MonitoringEvent {
     id: string; timestamp: string; log_line: string;
@@ -30,11 +45,13 @@ interface MonitoringEvent {
 /* ─── Helpers ────────────────────────────────────────────────────────────────── */
 const SEV_STYLES: Record<Severity, { bg: string; border: string; text: string; bar: string; dot: string; glow: string }> = {
     CRITICAL: { bg: 'bg-red-950/40', border: 'border-red-500/40', text: 'text-red-400', bar: 'bg-red-500', dot: 'bg-red-500', glow: 'shadow-red-500/20' },
+    ERROR: { bg: 'bg-red-950/30', border: 'border-red-400/40', text: 'text-red-300', bar: 'bg-red-400', dot: 'bg-red-400', glow: 'shadow-red-400/20' },
     WARNING: { bg: 'bg-amber-950/30', border: 'border-amber-500/30', text: 'text-amber-400', bar: 'bg-amber-400', dot: 'bg-amber-400', glow: 'shadow-amber-500/20' },
     MINOR: { bg: 'bg-yellow-950/20', border: 'border-yellow-500/20', text: 'text-yellow-400', bar: 'bg-yellow-400', dot: 'bg-yellow-400', glow: 'shadow-yellow-500/10' },
+    INFO: { bg: 'bg-blue-950/20', border: 'border-blue-500/20', text: 'text-blue-400', bar: 'bg-blue-500', dot: 'bg-blue-500', glow: 'shadow-blue-500/10' },
     HEALTHY: { bg: 'bg-emerald-950/20', border: 'border-emerald-500/20', text: 'text-emerald-400', bar: 'bg-emerald-500', dot: 'bg-emerald-500', glow: 'shadow-emerald-500/10' },
 };
-const SEV_PCT: Record<Severity, number> = { CRITICAL: 90, WARNING: 55, MINOR: 25, HEALTHY: 10 };
+const SEV_PCT: Record<Severity, number> = { CRITICAL: 90, ERROR: 75, WARNING: 55, MINOR: 25, INFO: 15, HEALTHY: 10 };
 
 const PANEL_META: Record<string, { label: string; icon: React.ReactNode; color: string }> = {
     DATABASE_MONITORING: { label: 'Database', icon: <Database className="h-3.5 w-3.5" />, color: 'text-sky-400' },
@@ -53,14 +70,17 @@ const CHART_ICONS: Record<string, string> = {
 };
 
 function deriveEvent(mapping: ChartMapping, ai: AgentInsight, logLine: string, id: string): MonitoringEvent {
-    const sev = (mapping.severity?.toUpperCase() as Severity) || 'HEALTHY';
+    const sev = (ai?.severity?.toUpperCase() as Severity) || (mapping.severity?.toUpperCase() as Severity) || 'HEALTHY';
     const pm = PANEL_META[mapping.panel] || PANEL_META.GENERIC_MONITORING;
-    const msg = logLine.toLowerCase();
-
-    const hasAnomaly = sev === 'CRITICAL' || (sev === 'WARNING' && (msg.includes('slow') || msg.includes('timeout')));
-    const anomalyTitle = hasAnomaly
-        ? (sev === 'CRITICAL' ? `Critical Event: ${mapping.title}` : `Latency Anomaly: ${mapping.title}`)
-        : undefined;
+    
+    // Explicit anomaly detection based on AI system_status
+    const isUnstable = ai?.system_status === 'UNSTABLE';
+    const isRisk = ai?.system_status === 'RISK';
+    const hasAnomaly = isUnstable || isRisk || sev === 'CRITICAL';
+    
+    const anomalyTitle = isUnstable 
+        ? `SYSTEM UNSTABLE: ${ai.error_type || mapping.title}` 
+        : (isRisk ? `PERFORMANCE RISK: ${ai.error_type || mapping.title}` : undefined);
 
     // Build detailed explanation
     const explanation = buildExplanation(mapping, ai, logLine);
@@ -68,23 +88,28 @@ function deriveEvent(mapping: ChartMapping, ai: AgentInsight, logLine: string, i
 
     return {
         id, timestamp: new Date().toISOString(), log_line: logLine || `[log event]`,
-        severity: sev, service: pm.label, errorType: mapping.metric_type || 'general',
-        cause: ai?.reason || mapping.description || 'Log pattern detected.',
+        severity: sev, service: pm.label, errorType: ai?.error_type || mapping.metric_type || 'general',
+        cause: ai?.cause || mapping.description || 'Log pattern detected.',
         chartType: mapping.chart_type || 'line',
         chartTitle: mapping.title || 'Log Event',
         chartPanel: mapping.panel || 'GENERIC_MONITORING',
-        insight: ai || { reason: 'No AI analysis', impact: 'Low', suggested_fix: 'Monitor.' },
+        insight: ai || { cause: 'Analyzing architectural context...', impact: 'Evaluating system stability...', suggested_fix: 'Stand by for detailed fix.' },
         hasAnomaly, anomalyTitle,
-        anomalyAction: ai?.suggested_fix || '',
+        anomalyAction: ai?.suggested_fix || 'Investigating logs...',
         explanation,
         fixSteps: fixData,
     };
 }
 
 function buildExplanation(mapping: ChartMapping, ai: AgentInsight, log: string): string {
-    const base = ai?.reason || mapping.description || 'A log event was captured by the monitoring agent.';
-    const impact = ai?.impact || 'System may experience degraded performance.';
-    return `${base} ${impact} The ${(mapping.metric_type || 'event').replace(/_/g, ' ')} was detected in the ${(mapping.panel || 'GENERIC').replace(/_/g, ' ').toLowerCase()} subsystem, triggering a severity level of ${mapping.severity || 'HEALTHY'}.`;
+    if (ai?.explanation) return ai.explanation; // Use raw AI explanation if available
+    
+    const cause = ai?.cause || mapping.description || 'A system event was captured.';
+    const impact = ai?.impact || 'Monitoring service is evaluating the effects on upstream dependencies.';
+    const subsystem = (mapping.panel || 'GENERIC').replace(/_/g, ' ').toLowerCase();
+    const fileInfo = ai?.affected_file ? ` The issue originated in ${ai.affected_file}.` : '';
+    
+    return `ROOT CAUSE: ${cause} ARCHITECTURAL IMPACT: ${impact} System context: Detected in the ${subsystem} layer.${fileInfo}`;
 }
 
 function buildFixSteps(fix: string, type: string): { steps: string[]; command?: string } {
@@ -180,7 +205,7 @@ function SeverityMeter({ severity }: { severity: Severity }) {
 function EventCard({ event, index, metrics }: { event: MonitoringEvent; index: number; metrics: any }) {
     const [expanded, setExpanded] = useState(index === 0);
     const [showFix, setShowFix] = useState(false);
-    const s = SEV_STYLES[event.severity];
+    const s = SEV_STYLES[event.severity] || SEV_STYLES.HEALTHY;
     const pm = PANEL_META[event.chartPanel] || PANEL_META.GENERIC_MONITORING;
 
     return (
@@ -269,53 +294,61 @@ function EventCard({ event, index, metrics }: { event: MonitoringEvent; index: n
                                         <span className="text-[9px] font-black text-violet-400 tracking-widest uppercase">AI Insight</span>
                                     </div>
                                     <div className="space-y-2">
+                                        {event.insight.error_type && (
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <span className="text-[7px] font-black text-violet-500 bg-violet-500/10 px-1.5 py-0.5 rounded border border-violet-500/20 uppercase tracking-widest">{event.insight.error_type}</span>
+                                            </div>
+                                        )}
                                         <div>
-                                            <span className="text-[7px] font-black text-slate-600 uppercase tracking-widest block mb-1">Root Cause</span>
-                                            <p className="text-[9px] text-slate-300 font-bold leading-relaxed">
-                                                <TypingText text={event.insight.reason || event.cause} speed={12} />
+                                            <span className="text-[7px] font-black text-slate-600 uppercase tracking-widest block mb-1">Affected File / Object</span>
+                                            <p className="text-[9px] text-cyan-400 font-mono font-bold truncate">
+                                                {event.insight.affected_file || 'System Core'}
                                             </p>
                                         </div>
                                         <div>
-                                            <span className="text-[7px] font-black text-slate-600 uppercase tracking-widest block mb-1">Impact</span>
-                                            <p className="text-[9px] text-red-400 leading-relaxed">{event.insight.impact}</p>
+                                            <span className="text-[7px] font-black text-slate-600 uppercase tracking-widest block mb-1">Root Cause Analysis</span>
+                                            <p className="text-[9px] text-slate-300 font-bold leading-relaxed">
+                                                <TypingText text={event.insight.cause || event.cause} speed={12} />
+                                            </p>
+                                        </div>
+                                        <div>
+                                            <span className="text-[7px] font-black text-slate-600 uppercase tracking-widest block mb-1">Potential Impact</span>
+                                            <p className="text-[9px] text-red-400 leading-relaxed font-semibold">{event.insight.impact}</p>
                                         </div>
                                     </div>
                                 </div>
 
                                 {/* Panel 4 — Anomaly Detector */}
-                                <div className={`backdrop-blur-sm rounded-2xl p-4 space-y-3 border ${event.hasAnomaly ? 'bg-red-950/30 border-red-500/30' : 'bg-black/30 border-emerald-500/20'}`}>
-                                    <div className="flex items-center gap-2">
-                                        <div className={`p-1.5 rounded-lg ${event.hasAnomaly ? 'bg-red-500/10' : 'bg-emerald-500/10'}`}>
-                                            {event.hasAnomaly
-                                                ? <AlertTriangle className="h-3.5 w-3.5 text-red-400" />
-                                                : <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />}
+                                <div className={`backdrop-blur-sm rounded-2xl p-4 space-y-3 border transition-all duration-700 ${event.insight.system_status === 'UNSTABLE' ? 'bg-red-950/40 border-red-500/60 shadow-[0_0_30px_rgba(239,68,68,0.15)] ring-1 ring-red-500/20' : event.insight.system_status === 'RISK' ? 'bg-amber-950/30 border-amber-500/40' : 'bg-black/30 border-emerald-500/30'}`}>
+                                    <div className="flex items-center justify-between gap-2">
+                                        <div className="flex items-center gap-2">
+                                            <div className={`p-1.5 rounded-lg ${event.insight.system_status === 'UNSTABLE' ? 'bg-red-500/20' : event.insight.system_status === 'RISK' ? 'bg-amber-500/20' : 'bg-emerald-500/20'}`}>
+                                                {event.insight.system_status === 'UNSTABLE' ? <AlertTriangle className="h-4 w-4 text-red-500 animate-pulse" /> : event.insight.system_status === 'RISK' ? <AlertCircle className="h-4 w-4 text-amber-400" /> : <CheckCircle2 className="h-4 w-4 text-emerald-400" />}
+                                            </div>
+                                            <span className={`text-[10px] font-black tracking-widest uppercase ${event.insight.system_status === 'UNSTABLE' ? 'text-red-400' : event.insight.system_status === 'RISK' ? 'text-amber-400' : 'text-emerald-400'}`}>
+                                                {event.insight.system_status || 'HEALTHY'}
+                                            </span>
                                         </div>
-                                        <span className={`text-[9px] font-black tracking-widest uppercase ${event.hasAnomaly ? 'text-red-400' : 'text-emerald-400'}`}>
-                                            Anomaly Detector
-                                        </span>
+                                        {event.insight.risk_level && (
+                                            <div className="px-2 py-0.5 rounded-full bg-black/50 border border-white/10 flex items-center gap-1.5">
+                                                <span className="text-[8px] font-black text-slate-500 uppercase">Risk</span>
+                                                <span className={`text-[10px] font-mono font-black ${event.insight.system_status === 'UNSTABLE' ? 'text-red-500' : 'text-emerald-400'}`}>{event.insight.risk_level}</span>
+                                            </div>
+                                        )}
                                     </div>
-                                    {event.hasAnomaly ? (
-                                        <div className="space-y-2">
-                                            <div className="p-2.5 bg-red-500/10 border border-red-500/20 rounded-xl">
-                                                <p className="text-[10px] font-black text-red-400">{event.anomalyTitle}</p>
-                                            </div>
-                                            <p className="text-[9px] text-slate-400 leading-relaxed">{event.anomalyAction}</p>
-                                            <div className="flex items-center gap-2">
-                                                <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                                                <span className="text-[8px] font-black text-red-400 tracking-widest">ANOMALY ACTIVE</span>
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <div className="flex flex-col items-start justify-center p-3 gap-2 bg-emerald-500/5 rounded-xl border border-emerald-500/10">
-                                            <div className="flex items-center gap-2">
-                                                <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-                                                <span className="text-[10px] font-black text-emerald-400 tracking-widest">SYSTEM STABLE</span>
-                                            </div>
-                                            <p className="text-[9px] text-emerald-600/80 leading-tight">
-                                                Log indicates routine service health. The {event.service.toLowerCase()} system is operating within nominal thresholds with {event.errorType.replace(/_/g, ' ')} under control.
+                                    
+                                    <div className="space-y-2">
+                                        <div className={`p-2.5 rounded-xl border ${event.insight.system_status === 'UNSTABLE' ? 'bg-red-500/10 border-red-500/30' : 'bg-emerald-500/5 border-emerald-500/20'}`}>
+                                            <p className={`text-[10px] font-black tracking-widest uppercase ${event.insight.system_status === 'UNSTABLE' ? 'text-red-500' : 'text-emerald-400'}`}>
+                                                {event.insight.system_status === 'UNSTABLE' ? 'SYSTEM UNSTABLE' : 'SYSTEM STABLE'}
                                             </p>
                                         </div>
-                                    )}
+                                        <p className="text-[9px] text-slate-400 leading-relaxed font-medium">
+                                            {event.insight.system_status === 'UNSTABLE' 
+                                                ? `CRITICAL ERROR: ${event.insight.error_type || 'Syntax Exception'} detected. This preventing compilation and rendering. High risk to service availability.`
+                                                : `Log indicates routine service health with ${event.insight.severity || 'INFO'} level. The system is operating within nominal thresholds.`}
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
 
@@ -325,7 +358,22 @@ function EventCard({ event, index, metrics }: { event: MonitoringEvent; index: n
                                     <Sparkles className="h-4 w-4 text-indigo-400" />
                                     <span className="text-xs font-black text-indigo-400 tracking-widest uppercase">AI Log Explanation</span>
                                 </div>
-                                <p className="text-[12px] text-slate-300 leading-relaxed font-sans">{event.explanation}</p>
+                                <div className="space-y-3">
+                                    <p className="text-[12px] text-slate-300 leading-relaxed font-sans">
+                                        {event.insight.system_status === 'UNSTABLE' && (
+                                            <span className="text-red-500 font-black mr-2 bg-red-500/10 px-1.5 py-0.5 rounded border border-red-500/20">CRITICAL SYSTEM ANALYSIS:</span>
+                                        )}
+                                        {event.explanation}
+                                    </p>
+                                    {event.insight.system_status === 'UNSTABLE' && (
+                                        <div className="flex flex-wrap gap-2 text-[10px] items-center">
+                                            <span className="text-slate-500 font-bold uppercase tracking-widest">Affected Stack:</span>
+                                            <span className="text-cyan-400 font-mono bg-cyan-400/5 px-2 py-0.5 rounded border border-cyan-400/10">{event.service} / {event.insight.affected_file || 'Core'}</span>
+                                            <span className="text-slate-500 font-bold uppercase tracking-widest ml-2">Severity Score:</span>
+                                            <span className="text-red-400 font-black">{event.insight.severity_score || 95}/100</span>
+                                        </div>
+                                    )}
+                                </div>
 
                                 <button
                                     onClick={() => setShowFix(!showFix)}
@@ -427,11 +475,28 @@ export default function AIObservabilityPanel() {
                             const mapping = data.mapping as ChartMapping;
                             const ai = data.ai as AgentInsight;
                             const logLine = String(data.log_line || data.log?.message || '');
-                            counterRef.current++;
-                            setEvents(prev => [
-                                deriveEvent(mapping, ai, logLine, `evt-${counterRef.current}`),
-                                ...prev
-                            ].slice(0, 25));
+                            const msgId = data.log_id || `evt-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+
+                            setEvents(prev => {
+                                // 1. If this is an update with AI data, find the matching card by ID
+                                if (ai) {
+                                    const existingIdx = prev.findIndex(e => e.id === msgId);
+                                    if (existingIdx !== -1) {
+                                        const updated = [...prev];
+                                        updated[existingIdx] = deriveEvent(mapping, ai, logLine, msgId);
+                                        return updated;
+                                    }
+                                }
+
+                                // 2. If we already have this exact message ID, don't add it as a new card
+                                if (prev.some(e => e.id === msgId)) return prev;
+
+                                // 3. Add as new event (at the top)
+                                return [
+                                    deriveEvent(mapping, ai, logLine, msgId),
+                                    ...prev
+                                ].slice(0, 50); // Increased slice to show more logs
+                            });
                         } else if (data.type === 'real_metrics') {
                             setMetrics(data.metrics);
                         }
@@ -664,6 +729,34 @@ function EChartRenderer({ type, severity, metrics, title }: {
                 },
                 itemStyle: { color: '#fff', borderColor: '#818cf8', borderWidth: 3 },
                 data: [0, 0, 0, 0, 0, 0]
+            }];
+        } else if (chartType === 'stackTrace') {
+            baseOption.radar = {
+                indicator: [
+                    { name: 'Complexity', max: 100 },
+                    { name: 'Depth', max: 100 },
+                    { name: 'Entropy', max: 100 },
+                    { name: 'Impact', max: 100 },
+                    { name: 'Risk', max: 100 }
+                ],
+                shape: 'circle',
+                splitNumber: 4,
+                axisName: { color: '#64748b', fontSize: 7, fontWeight: 'bold' },
+                splitLine: { lineStyle: { color: 'rgba(99, 102, 241, 0.1)' } },
+                splitArea: { show: false },
+                axisLine: { lineStyle: { color: 'rgba(99, 102, 241, 0.1)' } }
+            };
+            baseOption.series = [{
+                type: 'radar',
+                data: [
+                    {
+                        value: [85, 92, 78, 95, 88],
+                        name: 'Error Context',
+                        itemStyle: { color: '#f43f5e' },
+                        areaStyle: { color: 'rgba(244, 63, 94, 0.3)' },
+                        lineStyle: { width: 2, color: '#f43f5e', shadowBlur: 10, shadowColor: '#f43f5e' }
+                    }
+                ]
             }];
         } else if (chartType === 'bar') {
             baseOption.xAxis = { type: 'value', show: false };

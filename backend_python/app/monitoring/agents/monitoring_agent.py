@@ -1,4 +1,4 @@
-﻿import os
+import os
 import json
 from typing import TypedDict, Annotated, List, Union
 from langgraph.graph import StateGraph, END
@@ -41,8 +41,12 @@ class MonitoringAgent:
         return workflow.compile()
 
     async def parse_logs(self, state: AgentState):
-        raw_logs = "\n".join([f"[{log.type}] {log.data}" for log in state["logs"][-5:]])
-        prompt = f"Parse these backend logs and extract the error type, endpoint, and stack trace if any:\n{raw_logs}"
+        # Join lines but cap to prevent excessive token usage
+        raw_logs = "\n".join([f"[{log.type}] {log.data}" for log in state["logs"][-3:]])
+        prompt = f"""Parse these backend logs. Note: They may contain multi-line stack traces or build errors.
+Identify the EXACT error message, the file affected, and any code snippets (like variable typos).
+LOGS:
+{raw_logs}"""
         res = await self.llm.ainvoke([HumanMessage(content=prompt)])
         return {"parsed_data": {"summary": res.content}}
 
