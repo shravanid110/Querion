@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { DatabaseConnectionForm } from '@/components/connection/DatabaseConnectionForm';
 import Link from 'next/link';
 import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 
 const DATABASES = [
     { id: 'mysql', name: 'MySQL', logo: 'https://cdn.jsdelivr.net/gh/devicons/devicon/icons/mysql/mysql-original.svg', description: 'World\'s most popular open source database.' },
@@ -23,6 +24,7 @@ const DATABASES = [
 ];
 
 export default function DatabaseSelectionPage() {
+    const router = useRouter();
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedDb, setSelectedDb] = useState<string | null>(null);
 
@@ -66,7 +68,13 @@ export default function DatabaseSelectionPage() {
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ duration: 0.4, delay: idx * 0.05 }}
                             whileHover={{ y: -5 }}
-                            onClick={() => setSelectedDb(db.name)}
+                            onClick={() => {
+                                if (db.id === 'mysql') {
+                                    setSelectedDb(db.name);
+                                } else {
+                                    router.push(`/connect/${db.id}`);
+                                }
+                            }}
                             className="group relative cursor-pointer flex flex-col p-6 rounded-[24px] glass-card border-white/10 hover:border-indigo-500/50 transition-all duration-300 shadow-xl"
                         >
                             <div className="mb-6 bg-white/5 w-16 h-16 rounded-2xl flex items-center justify-center border border-white/10 group-hover:bg-white/10 transition-colors p-3">

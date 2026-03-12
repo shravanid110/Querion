@@ -64,3 +64,13 @@ export const getHistory = async () => {
     const response = await api.get('/history');
     return response.data;
 };
+
+export const getMultidbConnections = async () => {
+    const response = await api.get('/multidb');
+    return response.data;
+};
+
+export const runMultidbQuery = async (connectionId: string, prompt: string) => {
+    const response = await api.post('/multidb/query', { connectionId, prompt });
+    return response.data;
+};

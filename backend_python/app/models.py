@@ -21,6 +21,22 @@ class Connection(Base):
     user_master_password = Column(String(255), nullable=True) # Hashed Master Password
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
+class MultidbConnection(Base):
+    __tablename__ = "multidb_connections"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), nullable=True)
+    db_type = Column(String(50), nullable=False)
+    name = Column(String(255), nullable=True)
+    host = Column(String(255), nullable=True)
+    port = Column(Integer, default=3306)
+    database = Column(String(255), nullable=True)
+    username = Column(String(255), nullable=True)
+    password = Column(String(1024), nullable=True)
+    uri = Column(Text, nullable=True)
+    user_master_password = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
 class QueryHistory(Base):
     __tablename__ = "query_history"
 
@@ -36,15 +52,17 @@ class QueryHistory(Base):
     metrics = Column(Text) # JSON string
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
-engine_args = {
-    "connect_args": {"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {},
-    "pool_pre_ping": True
-}
+engine_args = {"pool_pre_ping": True}
 
-# Only add pool_size if not using SQLite (which uses NullPool/StaticPool)
-if "sqlite" not in settings.DATABASE_URL:
+# Handle connection arguments for different DB types
+if "sqlite" in settings.DATABASE_URL:
+    engine_args["connect_args"] = {"check_same_thread": False}
+else:
+    # Aggressive timeout for PostgreSQL/others to prevent startup hang
+    engine_args["connect_args"] = {"connect_timeout": 5}
     engine_args["pool_size"] = 20
     engine_args["max_overflow"] = 30
+    engine_args["pool_timeout"] = 30
 
 engine = create_engine(settings.DATABASE_URL, **engine_args)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

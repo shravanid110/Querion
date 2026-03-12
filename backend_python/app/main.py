@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 from datetime import datetime
 from contextlib import asynccontextmanager
 
-from app.routes import connection_routes, query_routes, url_connect_routes, security_routes, voice_routes, report_routes, auth_routes, ai_insights, history_routes
+from app.routes import connection_routes, query_routes, url_connect_routes, security_routes, voice_routes, report_routes, auth_routes, ai_insights, history_routes, multidb_routes
 from app.monitoring.routers import monitor_ws, monitor_sync
 from app.reporting.api import router as reporting_router
 from app.monitoring.dash_app import init_dash
@@ -15,18 +15,24 @@ from app.config import settings
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("Initializing Database...")
-    try:
-        init_db()
-        init_monitor_db()
-        
-        # Preheat Whisper model in background
-        from app.services.voice_service import preheat_model
-        preheat_model()
-        
-        print(f"✅ Querion Backend running on port {settings.PORT}")
-    except Exception as e:
-        print(f"❌ Database initialization failed: {e}")
+    import threading
+    def run_init():
+        print("DEBUG: Starting Async Database Initialization...")
+        try:
+            init_db()
+            init_monitor_db()
+            print("✅ Database initialization complete.")
+        except Exception as e:
+            print(f"❌ Database initialization failed: {e}")
+
+    # Start DB initialization in background thread to avoid hanging the app startup
+    threading.Thread(target=run_init, daemon=True).start()
+    
+    # Preheat Whisper model in background
+    from app.services.voice_service import preheat_model
+    preheat_model()
+    
+    print(f"🚀 Querion API is warming up on port {settings.PORT}...")
     yield
 
 app = FastAPI(title="Querion Backend", version="1.0.0", lifespan=lifespan)
@@ -73,6 +79,7 @@ app.include_router(report_routes.router,     prefix="/api/report",      tags=["r
 app.include_router(reporting_router,                                    tags=["Enterprise Reporting"])
 app.include_router(ai_insights.router,       prefix="/api",             tags=["ai-insights"])
 app.include_router(history_routes.router,    prefix="/api/history",     tags=["history"])
+app.include_router(multidb_routes.router,    prefix="/api/multidb",     tags=["multidb"])
 
 # ── Dash dashboard ────────────────────────────────────────────────────────────
 init_dash(app)
