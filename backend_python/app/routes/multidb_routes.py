@@ -148,7 +148,7 @@ async def run_multidb_query(connectionId: str = Body(...), prompt: str = Body(..
         
         schema = MultiDBFactory.get_schema_summary(db_type, credentials)
         
-        result = await convert_nl_to_sql(schema, prompt)
+        result = await convert_nl_to_sql(schema, prompt, db_type=db_type)
         
         if not result.get("sql"):
             return {
@@ -171,6 +171,8 @@ async def run_multidb_query(connectionId: str = Body(...), prompt: str = Body(..
                 field = number_fields[0]
                 numeric_sum = sum(float(row.get(field) or 0) for row in rows)
                 
+        suggested_chart = result.get("suggestedChart", "bar")
+        
         rich_explanation = result.get("explanation", "")
         if total_rows > 0 and result.get("sql"):
             try:
@@ -178,6 +180,11 @@ async def run_multidb_query(connectionId: str = Body(...), prompt: str = Body(..
                 explanation_parts = rich_explanation.split("📊 Data Visualization & Insights:")
                 header_part = explanation_parts[0] if explanation_parts else rich_explanation
                 rich_explanation = f"{header_part.strip()}\n\n{data_insights.strip()}"
+                
+                # If insights contain a CHART_TYPE, override the suggestion
+                chart_match = re.search(r"CHART_TYPE:\s*(bar|line|pie|area)", rich_explanation, re.IGNORECASE)
+                if chart_match:
+                    suggested_chart = chart_match.group(1).lower()
             except Exception as e:
                 print(e)
                 
@@ -192,7 +199,7 @@ async def run_multidb_query(connectionId: str = Body(...), prompt: str = Body(..
                 explanation=rich_explanation,
                 columns=json.dumps(jsonable_encoder(data["columns"])),
                 rows_data=json.dumps(jsonable_encoder(rows[:100])),
-                metrics=json.dumps({"totalRows": total_rows, "approxSum": numeric_sum})
+                metrics=json.dumps({"totalRows": total_rows, "approxSum": numeric_sum, "suggestedChart": suggested_chart})
             )
             db.add(history_record)
             db.commit()
@@ -204,6 +211,7 @@ async def run_multidb_query(connectionId: str = Body(...), prompt: str = Body(..
             "explanation": rich_explanation,
             "columns": data["columns"],
             "rows": rows,
+            "suggestedChart": suggested_chart,
             "metrics": {
                 "totalRows": total_rows,
                 "approxSum": numeric_sum

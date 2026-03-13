@@ -5,27 +5,89 @@ from .base import BaseConnector
 
 class RedisConnector(BaseConnector):
     def test_connection(self, credentials: Dict[str, Any]) -> Dict[str, Any]:
+        import socket
+        host = credentials.get('host', 'localhost')
+        
+        # Robust port extraction
         try:
-            r = redis.Redis(
-                host=credentials.get('host', 'localhost'),
-                port=credentials.get('port', 6379),
-                password=credentials.get('password'),
-                socket_timeout=5
-            )
-            r.ping()
+            port_val = credentials.get('port')
+            port = int(port_val) if port_val else 6379
+        except:
+            port = 6379
+            
+        username = credentials.get('username')
+        password = credentials.get('password')
+        
+        print(f"DEBUG: [REDIS] Testing connection to {host}:{port}")
+        
+        try:
+            r = self._get_connection(credentials)
             r.close()
             return {"success": True}
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            final_err = str(e)
+            print(f"DEBUG: [REDIS] Connection test failed: {final_err}")
+                
+            # Check for obvious credential mixups
+            hint = ""
+            if username and username.lower() == 'postgres':
+                hint = " TIP: You are using 'postgres' as username. Are you sure these aren't PostgreSQL credentials? Redis usually uses 'default' or no username."
+            elif "Authentication required" in final_err:
+                hint = " TIP: Password is incorrect or missing."
+            elif "closed by server" in final_err:
+                hint = " TIP: The server rejected the connection immediately. This usually happens if the password is wrong or if you're using SQL credentials for Redis."
+
+            return {"success": False, "error": f"Redis Error: {final_err}.{hint}"}
+
+    def _get_connection(self, credentials: Dict[str, Any]):
+        host = credentials.get('host', 'localhost')
+        try:
+            port_val = credentials.get('port')
+            port = int(port_val) if port_val else 6379
+        except:
+            port = 6379
+        
+        username = credentials.get('username')
+        password = credentials.get('password')
+        db_raw = credentials.get('database', '0')
+        try:
+            db_index = int(db_raw) if db_raw and str(db_raw).isdigit() else 0
+        except:
+            db_index = 0
+            
+        use_ssl = port == 6380 or any(x in host.lower() for x in ['upstash', 'redislabs', 'aiven', 'rlwy.net', 'cloud'])
+
+        def create_r(ssl_val):
+            return redis.Redis(
+                host=host,
+                port=port,
+                username=username if username and username.lower() not in ['default', 'none', ''] else None,
+                password=password,
+                db=db_index,
+                ssl=ssl_val,
+                ssl_cert_reqs=None,
+                decode_responses=True,
+                socket_timeout=3,
+                socket_connect_timeout=3,
+                retry_on_timeout=False
+            )
+
+        try:
+            r = create_r(use_ssl)
+            r.ping()
+            return r
+        except Exception as e1:
+            # Fallback
+            try:
+                r = create_r(not use_ssl)
+                r.ping()
+                return r
+            except Exception as e2:
+                raise e2
 
     def get_schema_summary(self, credentials: Dict[str, Any]) -> str:
         try:
-            r = redis.Redis(
-                host=credentials.get('host', 'localhost'),
-                port=credentials.get('port', 6379),
-                password=credentials.get('password')
-            )
-            
+            r = self._get_connection(credentials)
             info = r.info()
             keys_count = r.dbsize()
             
@@ -33,8 +95,11 @@ class RedisConnector(BaseConnector):
             keys = r.keys('*')[:20]
             key_samples = []
             for key in keys:
-                k_type = r.type(key).decode('utf-8')
-                key_samples.append(f"{key.decode('utf-8')} ({k_type})")
+                try:
+                    k_type = r.type(key)
+                    key_samples.append(f"{key} ({k_type})")
+                except:
+                    continue
                 
             summary = f"Redis Server: {info.get('redis_version')}\nTotal Keys: {keys_count}\nKey Samples: {', '.join(key_samples)}"
             r.close()
@@ -48,41 +113,67 @@ class RedisConnector(BaseConnector):
         Example: { "command": "GET", "key": "..." } or { "command": "HGETALL", "key": "..." }
         """
         try:
-            r = redis.Redis(
-                host=credentials.get('host', 'localhost'),
-                port=credentials.get('port', 6379),
-                password=credentials.get('password')
-            )
+            r = self._get_connection(credentials)
             
             try:
                 q = json.loads(query)
+                cmd = q.get("command", "").strip()
+                key = q.get("key", "").strip()
+                
+                # Build arguments for execute_command
+                exec_args = [cmd]
+                if key:
+                    exec_args.append(key)
+                
+                # Check for additional arguments
+                extra = q.get("args")
+                if isinstance(extra, list):
+                    exec_args.extend([str(a) for a in extra])
+                elif isinstance(extra, str) and extra:
+                    exec_args.extend(extra.split(' '))
             except:
-                # If AI generated 'GET mykey', we can try to parse it
-                parts = query.split(' ')
-                q = {"command": parts[0], "key": parts[1] if len(parts) > 1 else None}
+                # Fallback for plain string commands like 'KEYS *'
+                exec_args = [p.strip() for p in query.split(' ') if p.strip()]
 
-            cmd = q.get("command", "").upper()
-            key = q.get("key")
-            
-            if not key:
-                # Some commands don't need keys like DBSIZE
-                result = getattr(r, cmd.lower())()
-            else:
-                result = getattr(r, cmd.lower())(key)
+            if not exec_args:
+                raise Exception("Empty command received.")
+
+            # EXECUTE RAW COMMAND
+            # Fix for "ManagementCommands.command() takes 1 positional argument but 2 were given"
+            # This happens because redis-py intercepts 'COMMAND' and routes to a method with no args.
+            try:
+                # Sanitize: Remove trailing semicolons AI might add
+                if exec_args:
+                    exec_args[-1] = exec_args[-1].replace(';', '')
+
+                if exec_args[0].upper() == 'COMMAND' and len(exec_args) > 1:
+                    # Force bypass the high-level method and just use execute_command
+                    # if it fails with TypeError, we try the first arg only
+                    try:
+                        result = r.execute_command(*exec_args)
+                    except TypeError:
+                        result = r.execute_command(exec_args[0])
+                else:
+                    result = r.execute_command(*exec_args)
+            except TypeError as te:
+                if "positional argument" in str(te):
+                    result = r.execute_command(exec_args[0])
+                else:
+                    raise te
                 
             # Formatting result for our UI table
             formatted_rows = []
             if isinstance(result, dict):
-                formatted_rows = [{"key": k.decode('utf-8') if isinstance(k, bytes) else k, "value": v.decode('utf-8') if isinstance(v, bytes) else v} for k, v in result.items()]
-            elif isinstance(result, list):
-                formatted_rows = [{"value": v.decode('utf-8') if isinstance(v, bytes) else v} for v in result]
+                formatted_rows = [{"key": str(k), "value": str(v)} for k, v in result.items()]
+            elif isinstance(result, (list, set, tuple)):
+                # If it's a simple list (like KEYS result), show as values
+                formatted_rows = [{"key": f"Item {i}", "value": str(v)} for i, v in enumerate(result)]
             else:
-                val = result.decode('utf-8') if isinstance(result, bytes) else str(result)
-                formatted_rows = [{"key": key, "value": val}]
+                # Single value result
+                display_key = exec_args[1] if len(exec_args) > 1 else exec_args[0]
+                formatted_rows = [{"key": display_key, "value": str(result)}]
                 
             columns = [{"name": "key", "type": "string"}, {"name": "value", "type": "string"}]
-            if formatted_rows and "key" not in formatted_rows[0]:
-                columns = [{"name": "value", "type": "string"}]
                 
             r.close()
             return {

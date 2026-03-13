@@ -79,9 +79,10 @@ export const DataTable = ({ columns, rows }: DataTableProps) => {
         if (!rows || rows.length === 0) return;
         const headers = columns.join(',');
         const csvContent = [
-            headers,
+            columns.map(col => typeof col === 'object' ? (col as any).name : col).join(','),
             ...rows.map(row => columns.map(col => {
-                const val = row[col];
+                const colKey = typeof col === 'object' ? (col as any).name : col;
+                const val = row[colKey];
                 if (typeof val === 'string') return `"${val.replace(/"/g, '""')}"`;
                 return val;
             }).join(','))
@@ -102,8 +103,14 @@ export const DataTable = ({ columns, rows }: DataTableProps) => {
         const doc = new jsPDF('landscape');
         doc.text("Query Results", 14, 15);
 
-        const tableColumn = columns.map(col => col.replace(/_/g, ' '));
-        const tableRows = rows.map(row => columns.map(col => row[col]));
+        const tableColumn = columns.map(col => {
+            const name = typeof col === 'object' ? (col as any).name : col;
+            return String(name).replace(/_/g, ' ');
+        });
+        const tableRows = rows.map(row => columns.map(col => {
+            const colKey = typeof col === 'object' ? (col as any).name : col;
+            return row[colKey];
+        }));
 
         autoTable(doc, {
             head: [tableColumn],
@@ -201,7 +208,7 @@ export const DataTable = ({ columns, rows }: DataTableProps) => {
                                     onClick={() => handleSort(col)}
                                 >
                                     <div className="flex items-center gap-2">
-                                        {col.replace(/_/g, ' ')}
+                                        {typeof col === 'object' ? (col as any).name?.replace(/_/g, ' ') : String(col).replace(/_/g, ' ')}
                                         {sortConfig?.key === col && (
                                             <span className="text-indigo-500">
                                                 {sortConfig.direction === 'asc' ? '↑' : '↓'}
@@ -215,12 +222,16 @@ export const DataTable = ({ columns, rows }: DataTableProps) => {
                     <tbody className="divide-y divide-gray-50">
                         {currentRows.map((row, idx) => (
                             <tr key={idx} className="hover:bg-indigo-50/30 transition-colors group">
-                                {columns.map(col => (
-                                    <td key={col} className="px-6 py-4 text-gray-600 font-medium whitespace-nowrap">
-                                        {typeof row[col] === 'object' && row[col] !== null ?
-                                            <span className="text-[10px] font-mono bg-gray-100 px-2 py-1 rounded">{JSON.stringify(row[col])}</span> :
-                                            row[col]
-                                        }
+                                {columns.map((col, idx_col) => (
+                                    <td key={idx_col} className="px-6 py-4 text-gray-600 font-medium whitespace-nowrap">
+                                        {(() => {
+                                            const colKey = typeof col === 'object' ? (col as any).name : col;
+                                            const val = row[colKey];
+                                            if (typeof val === 'object' && val !== null) {
+                                                return <span className="text-[10px] font-mono bg-gray-100 px-2 py-1 rounded">{JSON.stringify(val)}</span>;
+                                            }
+                                            return val;
+                                        })()}
                                     </td>
                                 ))}
                             </tr>

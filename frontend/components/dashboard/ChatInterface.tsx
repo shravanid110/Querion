@@ -10,9 +10,10 @@ interface ChatInterfaceProps {
     generatedSql?: string | null;
     explanation?: string | null;
     initialQuery?: string;
+    dbType?: string;
 }
 
-export const ChatInterface = ({ onSearch, isThinking = false, generatedSql, explanation, initialQuery = '' }: ChatInterfaceProps) => {
+export const ChatInterface = ({ onSearch, isThinking = false, generatedSql, explanation, initialQuery = '', dbType = 'SQL' }: ChatInterfaceProps) => {
     const [query, setQuery] = useState(initialQuery);
     const [showSql, setShowSql] = useState(false);
 
@@ -49,7 +50,7 @@ export const ChatInterface = ({ onSearch, isThinking = false, generatedSql, expl
                             <textarea
                                 value={query}
                                 onChange={(e) => setQuery(e.target.value)}
-                                placeholder="Ask something like: Show total sales by region for last 6 months..."
+                                placeholder={dbType === 'redis' ? "Ask something like: List all keys, or Get value for 'user:123'..." : "Ask something like: Show total sales by region for last 6 months..."}
                                 className="w-full h-14 md:h-16 px-4 py-4 text-base md:text-lg text-gray-800 placeholder:text-gray-400 focus:outline-none bg-transparent resize-none leading-relaxed"
                                 onKeyDown={(e) => {
                                     if (e.key === 'Enter' && !e.shiftKey) {
@@ -120,7 +121,7 @@ export const ChatInterface = ({ onSearch, isThinking = false, generatedSql, expl
                                 >
                                     <div className="flex items-center gap-2 text-xs font-semibold text-gray-300 uppercase tracking-wider">
                                         <Code size={14} className="text-indigo-400" />
-                                        <span>Generated SQL</span>
+                                        <span>{dbType === 'redis' || dbType === 'mongodb' ? 'Generated Command' : 'Generated SQL'}</span>
                                     </div>
                                     <div className="flex items-center gap-3">
                                         <button

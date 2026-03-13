@@ -1,4 +1,4 @@
-﻿import chainlit as cl
+import chainlit as cl
 import os
 import json
 from datetime import datetime, timedelta
@@ -6,9 +6,9 @@ from app.monitoring.agents.monitoring_agent import MonitoringAgent
 from app.config import settings
 from app.monitoring.models import MonitorSessionLocal, UserProject, ProjectFile, ProjectLog
 from app.monitoring.schemas import LogMessage
-from app.models import SessionLocal, Connection
+from app.models import SessionLocal, Connection, MultidbConnection
 from app.services.encryption import decrypt
-from app.services.mysql_executor import MySQLService
+from app.connectors.factory import MultiDBFactory
 from app.services.nl_to_sql import convert_nl_to_sql
 from app.reporting.report_engine import ReportGenerator
 from sqlalchemy.orm import Session
@@ -118,18 +118,28 @@ async def on_database_mode(action: cl.Action):
 async def show_connection_selector():
     db = SessionLocal()
     try:
-        connections = db.query(Connection).all()
+        # Fetch legacy connections and multi-db connections
+        legacy_connections = db.query(Connection).all()
+        multidb_connections = db.query(MultidbConnection).all()
+        
         header_content = "## Database Assistant\nSelect a connection to start querying your data or generate reports."
         
-        if not connections:
+        if not legacy_connections and not multidb_connections:
             content = f"{header_content}\n\nNo database connections found. Please go to the [Connect Page](/connect) to add one."
             actions = [cl.Action(name="switch_to_monitoring", value="monitoring", label="Switch to Monitoring")]
         else:
             content = f"{header_content}\n\n"
             actions = []
-            for c in connections:
-                content += f"**{c.name}** ({c.database})\n"
-                actions.append(cl.Action(name="select_connection", value=c.id, label=f"Connect to {c.name}"))
+            
+            # Legacy/One-off (MySQL)
+            for c in legacy_connections:
+                content += f"**{c.name}** (MySQL/MariaDB)\n"
+                actions.append(cl.Action(name="select_connection", value=f"legacy_{c.id}", label=f"Connect to {c.name}"))
+            
+            # Multi-DB (Postgres, Redis, MongoDB, etc.)
+            for c in multidb_connections:
+                content += f"**{c.name}** ({c.db_type.upper()})\n"
+                actions.append(cl.Action(name="select_connection", value=f"multi_{c.id}", label=f"Connect to {c.name}"))
             
             actions.append(cl.Action(name="switch_to_monitoring", value="monitoring", label="Switch to Monitoring"))
         
@@ -139,13 +149,35 @@ async def show_connection_selector():
 
 @cl.action_callback("select_connection")
 async def on_select_connection(action: cl.Action):
-    connection_id = action.value
+    val = action.value
     db = SessionLocal()
-    connection = db.query(Connection).filter(Connection.id == connection_id).first()
+    
+    connection_id = None
+    db_type = "mysql" # default fallback
+    name = "Database"
+    
+    if val.startswith("multi_"):
+        conn_id = val.replace("multi_", "")
+        connection = db.query(MultidbConnection).filter(MultidbConnection.id == conn_id).first()
+        if connection:
+            connection_id = conn_id
+            db_type = connection.db_type
+            name = connection.name
+            cl.user_session.set("is_multi", True)
+    else:
+        conn_id = val.replace("legacy_", "") if val.startswith("legacy_") else val
+        connection = db.query(Connection).filter(Connection.id == conn_id).first()
+        if connection:
+            connection_id = conn_id
+            db_type = "mysql" # Legacy assumes MySQL/MariaDB
+            name = connection.name
+            cl.user_session.set("is_multi", False)
+            
     db.close()
     
-    if connection:
+    if connection_id:
         cl.user_session.set("current_connection_id", connection_id)
+        cl.user_session.set("current_db_type", db_type)
         cl.user_session.set("db_interaction_mode", "result") # Default to result
         
         actions = [
@@ -154,7 +186,7 @@ async def on_select_connection(action: cl.Action):
         ]
         
         await cl.Message(
-            content=f"### Connected to: **{connection.name}**\n\nHow would you like me to process your queries today? You can switch this at any time.",
+            content=f"### Connected to: **{name}** ({db_type.upper()})\n\nHow would you like me to process your queries today? You can switch this at any time.",
             actions=actions
         ).send()
 
@@ -235,7 +267,13 @@ async def main(message: cl.Message):
             return
 
         db = SessionLocal()
-        connection = db.query(Connection).filter(Connection.id == connection_id).first()
+        is_multi = cl.user_session.get("is_multi")
+        db_type = cl.user_session.get("current_db_type") or "mysql"
+        
+        if is_multi:
+            connection = db.query(MultidbConnection).filter(MultidbConnection.id == connection_id).first()
+        else:
+            connection = db.query(Connection).filter(Connection.id == connection_id).first()
         db.close()
 
         if not connection:
@@ -243,12 +281,14 @@ async def main(message: cl.Message):
             await show_connection_selector()
             return
 
-        params = {
+        # Prepare credentials for MultiDBFactory
+        credentials = {
             "host": connection.host,
             "port": connection.port,
             "database": connection.database,
-            "user": connection.username,
-            "password": decrypt(connection.password)
+            "username": connection.username if hasattr(connection, 'username') else None,
+            "password": decrypt(connection.password) if connection.password else None,
+            "uri": getattr(connection, 'uri', None)
         }
 
         msg = cl.Message(content="Analyzing your request...")
@@ -269,18 +309,19 @@ async def main(message: cl.Message):
                 sql_prompt += " (Focus: Generate the SELECT query to fetch all raw data required for this request. Do not mention reports in your explanation.)"
 
             # 2. Get Schema
-            schema = MySQLService.get_schema_summary(params)
+            schema = MultiDBFactory.get_schema_summary(db_type, credentials)
             
-            # 3. Convert NL to SQL
-            sql_result = await convert_nl_to_sql(schema, sql_prompt)
+            # 3. Convert NL to SQL/Query
+            # Pass db_type hint to converter if possible
+            sql_result = await convert_nl_to_sql(schema, sql_prompt, db_type=db_type)
             
             if not sql_result.get("sql"):
                 msg.content = f"Sorry, I couldn't generate a query for that. {sql_result.get('explanation', '')}"
                 await msg.update()
                 return
 
-            # 4. Execute SQL
-            data_result = MySQLService.execute_read_only_query(params, sql_result["sql"])
+            # 4. Execute Query
+            data_result = MultiDBFactory.execute_read_only_query(db_type, credentials, sql_result["sql"])
             data = data_result.get("rows", [])
 
             if not data:

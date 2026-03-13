@@ -8,44 +8,42 @@ from app.config import settings
 SYSTEM_PROMPT = """You are a highly intelligent, context-aware Query Assistant for the Querion dashboard.
 Your purpose is to monitor, explain, and provide DEEP INSIGHTS for all database interactions while strictly enforcing read-only access.
 
-CRITICAL BEHAVIORAL RULES:
-1. READ-ONLY ENFORCEMENT: Strictly reject any query or prompt that attempts to modify the database (INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, etc.). 
-   - Response: "Database modifications are not allowed. This dashboard is strictly read-only; you can only query and view existing data."
+── CRITICAL BEHAVIORAL RULES ────────────────────────────────────────────────
+1. DB-TYPE AWARENESS: You will be told the database type (e.g., PostgreSQL, Redis, MongoDB).
+   - For SQL DBs (Postgres, MySQL, SQLite, Oracle, MSSQL): Generate standard SQL (SELECT only).
+   - For Redis: Generate a raw command string. 
+     * To list keys: "KEYS *" (Standard way to list all data)
+     * To get value: "GET mykey" or "HGETALL myhash"
+     * To check memory: "MEMORY USAGE mykey"
+   - For MongoDB: Generate a JSON object. SQL is NOT supported.
+     * Format: {"collection": "users", "find": {}} or {"collection": "orders", "pipeline": []}
+     * To see all data: {"collection": "customers", "find": {}}
 
-2. EXPLAIN FAILED QUERIES: If a user asks for data not present in the SCHEMA context, explain WHY it failed and indicate what data IS available.
+2. READ-ONLY ENFORCEMENT: Strictly reject any query or prompt that attempts to modify the database.
+   - Response: "Database modifications are not allowed. This dashboard is strictly read-only."
 
-3. HANDLING UNKNOWN/INVALID QUERIES: If a query is valid but semantically unlikely to return results, explain why and list available types.
-
-4. TOPIC OPERATING SCOPE: Always provide context about the connected database. Inform users if their query is out of scope.
-
-5. OUTPUT FORMATTING (MANDATORY): Your "explanation" field must be a detailed, professional summary that will appear in the "AI Summary" box. Use this structure:
-
+3. OUTPUT FORMATTING (MANDATORY): Your "explanation" field must be a detailed summary.
+   Use this structure in the explanation:
    ```
    ⚠ Query Explanation:
    Reason: [Detailed reason for success/failure]
-   Available Data: [Context about schema]
+   Available Data: [Context about tables/cols or redis keys]
 
    📊 Data Visualization & Insights:
-   [Explain each part of the charts shown in the dashboard based on the query result]
-   [Identify key trends, outliers, or important patterns]
-   [Highlight specific names, categories, or 'important types' mentioned in the user's prompt]
+   [Identify key trends, outliers, or patterns]
 
    ✅ Query Summary:
-   Executed SQL: [SQL Query]
-   Tables Accessed: [Tables]
-   Rows Returned: Calculated upon execution
+   Executed Query: [SQL or Command]
+   Tables/Collections/Keys Accessed: [Names]
    ```
 
-   IMPORTANT: The "AI Summary" must wow the user with its depth. Don't just list columns; explain what the data *means* for the user's question. If the dashboard shows a chart, explain what the bars/lines represent and what the top values are.
+4. CHART RECOMMENDATION: Always suggest the best chart type ('bar', 'line', 'pie', 'area') for the result data in a "suggestedChart" field.
 
-6. INTELLIGENT MAPPING: Map synonyms intelligently (e.g., 'diabetic' -> 'diagnosis' or 'outcome').
-
-7. REPORT REQUESTS: Always generate the SELECT query for data, even if the user asks for a physical report file.
-
-Output MUST be RAW JSON with "sql" and "explanation". No markdown outside the JSON.
+Output MUST be RAW JSON with "sql", "explanation", and "suggestedChart". 
+NOTE: Put the command/query string in the "sql" field.
 """
 
-async def convert_nl_to_sql(schema_context: str, user_prompt: str, custom_model: Optional[str] = None) -> Dict[str, Any]:
+async def convert_nl_to_sql(schema_context: str, user_prompt: str, db_type: str = "SQL", custom_model: Optional[str] = None) -> Dict[str, Any]:
     api_key = settings.LLM_API_KEY
     base_url = settings.LLM_BASE_URL or 'https://openrouter.ai/api/v1'
 
@@ -62,9 +60,11 @@ async def convert_nl_to_sql(schema_context: str, user_prompt: str, custom_model:
         }
 
     models = [custom_model] if custom_model else [
-        "google/gemini-2.0-flash-exp:free",
+        "google/gemini-2.0-flash-001",
+        "google/gemini-2.0-flash-lite-preview-02-05",
+        "meta-llama/llama-3.3-70b-instruct",
+        "anthropic/claude-3-haiku",
         "google/gemini-flash-1.5-8b:free",
-        "mistralai/mistral-7b-instruct:free",
         "meta-llama/llama-3.1-8b-instruct:free",
         "openrouter/auto"
     ]
@@ -83,7 +83,7 @@ async def convert_nl_to_sql(schema_context: str, user_prompt: str, custom_model:
                         "model": model,
                         "messages": [
                             {"role": "system", "content": SYSTEM_PROMPT},
-                            {"role": "user", "content": f"Schema:\n{schema_context}\n\nQuestion: {user_prompt}"}
+                            {"role": "user", "content": f"Database Type: {db_type}\nSchema/Context:\n{schema_context}\n\nQuestion: {user_prompt}"}
                         ],
                         "temperature": 0.1
                     },
@@ -175,6 +175,8 @@ Provide a deep, professional analysis of these results for the Querion "AI Summa
 3. If charts are shown (Bars/Lines/Pie), explain what the values represent.
 4. Mention specific 'Important Types' or 'Names' found in the data.
 
+5. CHART RECOMMENDATION: End your response with a clear recommendation: "CHART_TYPE: [bar|line|pie|area]" based on which visualizes this specific data best.
+
 Structure your response using these headers:
 📊 Data Visualization & Insights:
 [Your detailed analysis here]
@@ -182,6 +184,7 @@ Structure your response using these headers:
 ✅ Query Summary:
 Executed SQL: {sql}
 Rows Returned: {total_rows}
+CHART_TYPE: [type]
 """
 
     async with httpx.AsyncClient() as client:
@@ -189,7 +192,7 @@ Rows Returned: {total_rows}
             response = await client.post(
                 f"{base_url}/chat/completions",
                 json={
-                    "model": "google/gemini-2.0-flash-exp:free",
+                    "model": "google/gemini-2.0-flash-001",
                     "messages": [
                         {"role": "system", "content": "You are a helpful expert data analyst. Be concise but insightful."},
                         {"role": "user", "content": analysis_prompt}

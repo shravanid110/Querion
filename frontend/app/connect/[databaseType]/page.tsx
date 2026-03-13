@@ -135,7 +135,7 @@ export default function ConnectDatabasePage({ params }: { params: Promise<{ data
                 setShowSuccessCard(true);
                 // Redirect after 3 seconds
                 setTimeout(() => {
-                    router.push('/chat');
+                    router.push(`/chat?connId=${res.data.id}`);
                 }, 3000);
             }
         } catch (error: any) {

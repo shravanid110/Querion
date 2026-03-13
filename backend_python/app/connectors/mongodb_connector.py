@@ -16,12 +16,22 @@ class MongoDBConnector(BaseConnector):
         except Exception as e:
             return {"success": False, "error": str(e)}
 
+    def _get_db(self, client, credentials):
+        db_name = credentials.get('database')
+        if not db_name:
+            try:
+                # Try to get default db from URI
+                db_name = client.get_database().name
+            except:
+                # Fallback to 'test' if nothing specified
+                db_name = 'test'
+        return client[db_name]
+
     def get_schema_summary(self, credentials: Dict[str, Any]) -> str:
         uri = credentials.get('uri')
         try:
             client = MongoClient(uri)
-            db_name = client.get_database().name
-            db = client[db_name]
+            db = self._get_db(client, credentials)
             
             collections = db.list_collection_names()
             if not collections:
@@ -49,8 +59,7 @@ class MongoDBConnector(BaseConnector):
         uri = credentials.get('uri')
         try:
             client = MongoClient(uri)
-            db_name = client.get_database().name
-            db = client[db_name]
+            db = self._get_db(client, credentials)
             
             # AI typically generates SQL. We might need to handle SQL-to-Mongo or 
             # expect AI to generate Mongo Shell commands. 

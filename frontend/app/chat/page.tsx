@@ -22,7 +22,14 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { getMultidbConnections, runMultidbQuery } from '@/services/api';
 import { cn } from '@/lib/utils';
 
-export default function ChatPage() {
+import { useSearchParams } from 'next/navigation';
+
+import { Suspense } from 'react';
+
+function ChatContent() {
+    const searchParams = useSearchParams();
+    const connId = searchParams.get('connId');
+
     const [connections, setConnections] = useState<any[]>([]);
     const [selectedConnection, setSelectedConnection] = useState<any>(null);
     const [schema, setSchema] = useState<any[]>([]); // To be populated via API
@@ -36,7 +43,15 @@ export default function ChatPage() {
             try {
                 const conns = await getMultidbConnections();
                 setConnections(conns);
+                
                 if (conns.length > 0) {
+                    if (connId) {
+                        const target = conns.find((c: any) => String(c.id) === connId);
+                        if (target) {
+                            setSelectedConnection(target);
+                            return;
+                        }
+                    }
                     setSelectedConnection(conns[0]);
                 }
             } catch (err) {
@@ -44,17 +59,23 @@ export default function ChatPage() {
             }
         };
         fetchConns();
-    }, []);
+    }, [connId]);
 
     // Placeholder schema detection (in a real app, this would be an API call)
     useEffect(() => {
         if (selectedConnection) {
             // Mocking schema for UI demonstration until backend endpoint is fully integrated for schema fetch
-            setSchema([
-                { name: 'customers', columns: [{name: 'id', type: 'integer'}, {name: 'name', type: 'string'}, {name: 'location', type: 'string'}] },
-                { name: 'orders', columns: [{name: 'id', type: 'integer'}, {name: 'customer_id', type: 'integer'}, {name: 'amount', type: 'float'}, {name: 'date', type: 'date'}] },
-                { name: 'products', columns: [{name: 'sku', type: 'string'}, {name: 'price', type: 'float'}, {name: 'category', type: 'string'}] }
-            ]);
+            if (selectedConnection.dbType === 'redis') {
+                 setSchema([
+                    { name: 'Keys', columns: [{name: 'key', type: 'string'}, {name: 'value', type: 'string'}] }
+                ]);
+            } else {
+                setSchema([
+                    { name: 'customers', columns: [{name: 'id', type: 'integer'}, {name: 'name', type: 'string'}, {name: 'location', type: 'string'}] },
+                    { name: 'orders', columns: [{name: 'id', type: 'integer'}, {name: 'customer_id', type: 'integer'}, {name: 'amount', type: 'float'}, {name: 'date', type: 'date'}] },
+                    { name: 'products', columns: [{name: 'sku', type: 'string'}, {name: 'price', type: 'float'}, {name: 'category', type: 'string'}] }
+                ]);
+            }
         }
     }, [selectedConnection]);
 
@@ -100,12 +121,16 @@ export default function ChatPage() {
                                 className="text-center py-20 space-y-4"
                             >
                                 <div className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-500/10 border border-indigo-500/20 rounded-full text-indigo-400 text-xs font-bold uppercase tracking-widest mb-4">
-                                    <Sparkles size={14} /> Querion AI Analyst
+                                    <Sparkles size={14} /> Querion {selectedConnection?.dbType === 'redis' ? 'Redis' : 'AI'} Analyst
                                 </div>
-                                <h1 className="text-5xl font-extrabold text-white tracking-tight">How can I help with your data?</h1>
+                                <h1 className="text-5xl font-extrabold text-white tracking-tight">
+                                    {selectedConnection?.dbType === 'redis' ? 'Explore your Redis Data' : 'How can I help with your data?'}
+                                </h1>
                                 <p className="text-slate-400 text-lg max-w-2xl mx-auto">
                                     Connected to <span className="text-indigo-400 font-bold">{selectedConnection?.name || 'Loading...'}</span>. 
-                                    Ask me anything about your datasets in natural language.
+                                    {selectedConnection?.dbType === 'redis' 
+                                        ? 'Ask me to list keys, get values, or analyze cache performance.' 
+                                        : 'Ask me anything about your datasets in natural language.'}
                                 </p>
                             </motion.div>
                         )}
@@ -116,7 +141,7 @@ export default function ChatPage() {
                                 onSearch={handleSearch} 
                                 isThinking={isThinking} 
                                 generatedSql={result?.sql}
-                                explanation={result?.explanation}
+                                dbType={selectedConnection?.dbType}
                             />
                         </div>
 
@@ -190,8 +215,12 @@ export default function ChatPage() {
                                         </div>
                                     </div>
                                     <div className="h-[500px]">
-                                        <ChartPanel data={result.rows} columns={result.columns} />
-                                    </div>
+                                         <ChartPanel 
+                                             data={result.rows} 
+                                             columns={result.columns} 
+                                             initialChartType={result.suggestedChart}
+                                         />
+                                     </div>
                                 </div>
 
                                 {/* Data Table Section */}
@@ -209,5 +238,13 @@ export default function ChatPage() {
                 </main>
             </div>
         </div>
+    );
+}
+
+export default function ChatPage() {
+    return (
+        <Suspense fallback={<div className="min-h-screen bg-[#020617] flex items-center justify-center text-white">Loading Analyst...</div>}>
+            <ChatContent />
+        </Suspense>
     );
 }
