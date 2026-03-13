@@ -1,11 +1,12 @@
 import redis
+import ssl
+import socket
 from typing import Dict, Any, List
 import json
 from .base import BaseConnector
 
 class RedisConnector(BaseConnector):
     def test_connection(self, credentials: Dict[str, Any]) -> Dict[str, Any]:
-        import socket
         host = credentials.get('host', 'localhost')
         
         # Robust port extraction
@@ -20,8 +21,18 @@ class RedisConnector(BaseConnector):
         
         print(f"DEBUG: [REDIS] Testing connection to {host}:{port}")
         
+        # 1. Fast socket check to prevent long hangs on unreachable hosts
         try:
-            r = self._get_connection(credentials)
+            with socket.create_connection((host, port), timeout=3):
+                print(f"DEBUG: [REDIS] Port {port} is open.")
+        except Exception as e:
+            print(f"DEBUG: [REDIS] Port unreachable: {e}")
+            return {"success": False, "error": f"Cloud Redis unreachable at {host}:{port}. Ensure your IP is whitelisted and the host/port is correct."}
+
+        # 2. Driver connection attempt
+        try:
+            r = self._get_connection(credentials, is_test=True)
+            r.ping()
             r.close()
             return {"success": True}
         except Exception as e:
@@ -31,15 +42,15 @@ class RedisConnector(BaseConnector):
             # Check for obvious credential mixups
             hint = ""
             if username and username.lower() == 'postgres':
-                hint = " TIP: You are using 'postgres' as username. Are you sure these aren't PostgreSQL credentials? Redis usually uses 'default' or no username."
+                hint = " TIP: You are using 'postgres' as username. Are you sure these aren't PostgreSQL credentials?"
             elif "Authentication required" in final_err:
                 hint = " TIP: Password is incorrect or missing."
-            elif "closed by server" in final_err:
-                hint = " TIP: The server rejected the connection immediately. This usually happens if the password is wrong or if you're using SQL credentials for Redis."
+            elif "Timeout" in final_err or "timeout" in final_err.lower():
+                hint = " TIP: Connection timed out. Check if SSL/TLS is REQUIRED (standard on some clusters)."
 
-            return {"success": False, "error": f"Redis Error: {final_err}.{hint}"}
+            return {"success": False, "error": f"Redis connectivity failed: {final_err}.{hint}"}
 
-    def _get_connection(self, credentials: Dict[str, Any]):
+    def _get_connection(self, credentials: Dict[str, Any], is_test=False):
         host = credentials.get('host', 'localhost')
         try:
             port_val = credentials.get('port')
@@ -55,34 +66,43 @@ class RedisConnector(BaseConnector):
         except:
             db_index = 0
             
-        use_ssl = port == 6380 or any(x in host.lower() for x in ['upstash', 'redislabs', 'aiven', 'rlwy.net', 'cloud'])
+        # Cloud providers (Upstash, AWS, RedisLabs) usually prefer SSL 
+        use_ssl = port == 6380 or any(x in host.lower() for x in ['upstash', 'redislabs', 'aiven', 'cloud'])
+        
+        # For Railway proxies (e.g. shuttle.proxy.rlwy.net:42XXX), SSL is typically NOT used.
+        if "rlwy.net" in host.lower() and port != 6380:
+            use_ssl = False
 
-        def create_r(ssl_val):
+        timeout = 5 if is_test else 10
+
+        def create_client(ssl_enabled):
             return redis.Redis(
                 host=host,
                 port=port,
                 username=username if username and username.lower() not in ['default', 'none', ''] else None,
                 password=password,
                 db=db_index,
-                ssl=ssl_val,
-                ssl_cert_reqs=None,
+                ssl=ssl_enabled,
+                ssl_cert_reqs=ssl.CERT_NONE if ssl_enabled else None, # Skip verification for cloud proxies
                 decode_responses=True,
-                socket_timeout=3,
-                socket_connect_timeout=3,
+                socket_timeout=timeout,
+                socket_connect_timeout=timeout,
                 retry_on_timeout=False
             )
 
         try:
-            r = create_r(use_ssl)
-            r.ping()
-            return r
+            client = create_client(use_ssl)
+            client.ping()
+            return client
         except Exception as e1:
-            # Fallback
+            print(f"DEBUG: [REDIS] Initial attempt (ssl={use_ssl}) failed: {e1}. Retrying with auto-ssl detection...")
             try:
-                r = create_r(not use_ssl)
-                r.ping()
-                return r
+                # Fallback to the other SSL state
+                client = create_client(not use_ssl)
+                client.ping()
+                return client
             except Exception as e2:
+                print(f"DEBUG: [REDIS] Connection attempt failed: {e2}")
                 raise e2
 
     def get_schema_summary(self, credentials: Dict[str, Any]) -> str:

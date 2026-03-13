@@ -20,8 +20,8 @@ class ProjectFile(Base):
     __tablename__ = "project_files"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    project_id = Column(Integer, ForeignKey("users_projects.id"), nullable=False)
-    file_path = Column(String(1024), nullable=False)
+    project_id = Column(Integer, ForeignKey("users_projects.id"), nullable=False, index=True)
+    file_path = Column(String(1024), nullable=False, index=True)
     content = Column(Text, nullable=True)
     
     project = relationship("UserProject", back_populates="files")
@@ -30,9 +30,9 @@ class ProjectLog(Base):
     __tablename__ = "project_logs"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    project_id = Column(Integer, ForeignKey("users_projects.id"), nullable=False)
+    project_id = Column(Integer, ForeignKey("users_projects.id"), nullable=False, index=True)
     log_line = Column(Text, nullable=False)
-    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
+    timestamp = Column(DateTime, default=datetime.datetime.utcnow, index=True)
     
     project = relationship("UserProject", back_populates="logs")
 

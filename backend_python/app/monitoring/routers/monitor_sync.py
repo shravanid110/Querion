@@ -19,7 +19,16 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# ── Agent instance (shared) ───────────────────────────────────────────────────
+# ── Persistent Global Buffers ──────────────────────────────────────────────
+# Maintain log state between sync calls for cross-request multiline grouping
+PROJ_BUFFERS = {} 
+# Track last heartbeat to detect when project stops
+PROJ_ACTIVITY = {}
+# Track session IDs to detect restarts
+PROJ_SESSIONS = {}
+# Track when each session started to filter logs
+PROJ_SESSION_START = {}
+
 _agent = None
 def get_agent():
     global _agent
@@ -69,22 +78,56 @@ async def sync_monitor_data(req: SyncRequest, db: Session = Depends(get_monitor_
             db.commit() # Commit to get the ID for the background task
             db.refresh(project)
 
-        # Offload all heavy work to background to prevent CLI Timeout
-        asyncio.create_task(process_sync_background(req, project.id))
+        # Update heartbeat and detect restart
+        project_id = project.id
+        now = datetime.utcnow()
+        last_act = PROJ_ACTIVITY.get(project_id)
+        is_restart = False
         
-        return {"status": "success", "message": "Changes accepted for background processing.", "project_id": project.id}
+        # If inactivity > 25 seconds, assume new session
+        if last_act and (now - last_act).total_seconds() > 25:
+            is_restart = True
+            
+        if req.logs:
+            restart_patterns = ["server started", "ready in", "compiled successfully", "listening on", "starting..."]
+            for l in req.logs:
+                if any(p in l.line.lower() for p in restart_patterns):
+                    is_restart = True
+                    break
+        
+        if is_restart or project_id not in PROJ_SESSIONS:
+            import uuid
+            PROJ_SESSIONS[project_id] = str(uuid.uuid4())
+            PROJ_SESSION_START[project_id] = now
+            if project_id in PROJ_BUFFERS:
+                PROJ_BUFFERS[project_id] = {"lines": [], "ts": None}
+            # Update activity now to stabilize
+            PROJ_ACTIVITY[project_id] = now
+        else:
+            PROJ_ACTIVITY[project_id] = now
+
+        # Offload sync work
+        asyncio.create_task(process_sync_background(req, project.id, is_restart))
+        
+        return {"status": "success", "message": "Changes accepted.", "project_id": project.id, "active": True}
     except Exception as e:
         logger.error(f"SYNC_INIT_ERROR: {str(e)}")
         return JSONResponse(status_code=500, content={"error": str(e)})
 
-async def process_sync_background(req: SyncRequest, project_id: int):
-    """Heavy lifted processing of files and logs."""
+async def process_sync_background(req: SyncRequest, project_id: int, is_restart: bool = False):
     from .monitor_ws import manager
     from app.services.metrics_engine import metrics_engine
     from app.services.log_chart_mapper import analyze_log_and_assign_chart
+    from ..models import MonitorSessionLocal
     
-    with next(get_monitor_db()) as db:
+    with MonitorSessionLocal() as db:
         try:
+            if req.logs:
+                # Signal frontend that new logs arrived
+                await manager.broadcast_to_user("default_user", {
+                    "type": "logs_synced",
+                    "project_id": project_id
+                })
             # 1. Sync Files
             if req.files:
                 for f in req.files:
@@ -106,6 +149,9 @@ async def process_sync_background(req: SyncRequest, project_id: int):
 
             # 2. Sync Logs
             if req.logs:
+                # If restart, we can mark existing logs as "old" or just rely on session_id
+                session_id = PROJ_SESSIONS.get(project_id, "default")
+                
                 # a. Batch Database Save
                 db_logs = [
                     ProjectLog(
@@ -116,38 +162,81 @@ async def process_sync_background(req: SyncRequest, project_id: int):
                 ]
                 db.add_all(db_logs)
 
-                # b. Log Intelligence & Clustering Agent (Agent 1 & 2)
-                events_map = {}
-                START_MARKERS = ["error", "exception", "unhandled", "unexpected token", "failed to compile", "module not found", "typeerror", "referenceerror", "syntaxerror", "fatal", "critical", "timeout", "500", "400", "traceback", "internal server error"]
-                CONT_MARKERS = ["at ", "|", ">", "at JSX", "File:", "Plugin:", "line ", "^", "├──", "└──", "│", "      ", "    ", "  "]
+                # b. Multiline Log Grouping Logic (Cross-Request Persisted)
+                # Rules: Group stack traces into one event block before AI analysis.
+                TIMESTAMP_PAT = _re.compile(r'(\d{4}[-/]\d{2}[-/]\d{2})|(\d{2}:\d{2}:\d{2})|(\d{1,2}:\d{2}\s?(?:AM|PM))')
+                LOG_LEVEL_PAT = _re.compile(r'\b(INFO|DEBUG|WARN|WARNING|ERROR|CRITICAL|FATAL|EXCEPTION|TRACEBACK)\b', _re.I)
+                PROCESS_MARKERS = ["VITE", "Webpack", "React", "Node.js", "Server started", "Ready in", "Compiled", "Listening", "Starting", "npm error", "yarn "]
+                STACK_INDICATORS = ["at ", "at JSX", "File:", "Plugin:", "Internal server error", "traceback", "line ", "│", "├──", "└──"]
+
+                def is_new_event(text):
+                    if TIMESTAMP_PAT.search(text): return True
+                    # Check for log level start (not inside a stack line)
+                    if LOG_LEVEL_PAT.search(text) and not text.strip().startswith("at "): return True
+                    if any(text.strip().startswith(kw) for kw in PROCESS_MARKERS): return True
+                    return False
+
+                def is_stack(text):
+                    trimmed = text.strip()
+                    if text.startswith(" ") or text.startswith("\t"): return True
+                    if any(trimmed.startswith(kw) for kw in STACK_INDICATORS): return True
+                    if "^" in text: return True
+                    if _re.search(r'([A-Za-z]:\\[^: \n]+|/[^: \n]+)', text): return True
+                    return False
+
+                if project_id not in PROJ_BUFFERS:
+                    PROJ_BUFFERS[project_id] = {"lines": [], "ts": None}
                 
-                current_stack = []
-                last_ts = None
-                
+                state = PROJ_BUFFERS[project_id]
+                log_blocks = []
+
                 for l in req.logs:
                     line = l.line
-                    is_start = any(kw in line.lower() for kw in START_MARKERS) or any(line.strip().startswith(kw) for kw in ["Vite", "Webpack", "React", "Node.js"])
-                    is_cont = any(line.startswith(prefix) for prefix in CONT_MARKERS) or line.startswith(' ') or line.startswith('\t') or "^" in line
-                    
-                    if is_start or is_cont or (not line.strip() and current_stack):
-                        if not current_stack: last_ts = l.timestamp or datetime.utcnow()
-                        current_stack.append(line)
+                    if is_new_event(line):
+                        # Emit old buffer if it has content
+                        if state["lines"]:
+                            log_blocks.append({"lines": state["lines"], "ts": state["ts"]})
+                        state["lines"] = [line]
+                        state["ts"] = l.timestamp or datetime.utcnow()
+                    elif is_stack(line):
+                        if not state["lines"]: state["ts"] = l.timestamp or datetime.utcnow()
+                        state["lines"].append(line)
                     else:
-                        if current_stack:
-                            txt = "\n".join(current_stack)
-                            key = txt[:100].lower().strip()
-                            if key in events_map: events_map[key]["count"] += 1
-                            else: events_map[key] = {"lines": current_stack, "timestamp": last_ts, "count": 1}
-                            current_stack = []
-                        key = line[:100].lower().strip()
-                        if key in events_map: events_map[key]["count"] += 1
-                        else: events_map[key] = {"lines": [line], "timestamp": l.timestamp or datetime.utcnow(), "count": 1}
+                        # Non-stack line: could be start of an info message without timestamp
+                        if state["lines"] and not is_stack(line):
+                             log_blocks.append({"lines": state["lines"], "ts": state["ts"]})
+                             state["lines"] = [line]
+                             state["ts"] = l.timestamp or datetime.utcnow()
+                        else:
+                             state["lines"].append(line)
+                             if not state["ts"]: state["ts"] = l.timestamp or datetime.utcnow()
+
+                # Rule: Don't emit the last block yet - it might have trailing stack lines in next sync
+                # EXCEPT if the log is clearly an INFO or common line that likely won't have more lines.
+                # For simplicity, we emit blocks when we see a NEW event.
                 
-                if current_stack:
-                    txt = "\n".join(current_stack)
-                    key = txt[:100].lower().strip()
-                    if key in events_map: events_map[key]["count"] += 1
-                    else: events_map[key] = {"lines": current_stack, "timestamp": last_ts, "count": 1}
+                # c. Show grouping in Terminal for debugging
+                if log_blocks:
+                    NL = "\n"
+                    print(f"\n" + "="*80)
+                    print(f"  [CLUSTER ENGINE] EMITTING {len(log_blocks)} GROUPED BLOCKS - PROJECT: {project_id}")
+                    print("="*80)
+                    for idx, block in enumerate(log_blocks):
+                        txt = NL.join(block["lines"])
+                        print(f"  BLOCK #{idx+1} ({len(block['lines'])} Lines):")
+                        print(f"  {txt[:300].replace(NL, '  |  ')}...")
+                    print("="*80 + "\n")
+
+                # Clustering into events_map for Dashboard & Analysis
+                events_map = {}
+                for block in log_blocks:
+                    full_text = "\n".join(block["lines"])
+                    cluster_key = full_text[:100].lower().strip()
+                    if cluster_key in events_map:
+                        events_map[cluster_key]["count"] += 1
+                        events_map[cluster_key]["timestamp"] = block["ts"]
+                    else:
+                        events_map[cluster_key] = {"lines": block["lines"], "timestamp": block["ts"], "count": 1}
 
                 grouped_events = list(events_map.values())
 
@@ -167,19 +256,22 @@ async def process_sync_background(req: SyncRequest, project_id: int):
                     elif "warn" in full_lower or "deprecated" in full_lower or "retry" in full_lower:
                         severity = "WARNING"
                     
-                    # Rule 7: Extract Error Type
+                    # Rule 7: Extract Error Type & Source
                     error_type = "System Logic"
                     affected_file = "N/A"
+                    source_marker = "IDE Collector"
+                    
                     if "syntax error" in full_lower or "unexpected token" in full_lower:
                         error_type = "React/JS Syntax Error"
                     elif "typeerror" in full_lower:
                         error_type = "TypeError"
-                    elif "failed to compile" in full_lower:
-                        error_type = "Compilation Failure"
                     
-                    file_match = _re.search(r'(?:File: |Plugin: |at |in )([A-Za-z]:\\[^: \n]+|/[^: \n]+)', full_block)
-                    if file_match:
-                        affected_file = file_match.group(1)
+                    # Extract source e.g. "Plugin: vite:react-babel"
+                    src_match = _re.search(r'Plugin:\s*([^\s\n]+)', full_block)
+                    if src_match: source_marker = src_match.group(1)
+                    
+                    file_match = _re.search(r'(?:File: |at |in )([A-Za-z]:\\[^: \n]+|/[^: \n]+)', full_block)
+                    if file_match: affected_file = file_match.group(1)
 
                     log_data = {
                         "level": severity,
@@ -187,6 +279,9 @@ async def process_sync_background(req: SyncRequest, project_id: int):
                         "timestamp": str(event["timestamp"]),
                         "id": log_id,
                         "error_type": error_type,
+                        "source": source_marker,
+                        "message": event["lines"][0] if event["lines"] else "Unknown",
+                        "stack_trace": full_block if len(event["lines"]) > 1 else "",
                         "file": affected_file,
                         "count": event.get("count", 1)
                     }
@@ -230,36 +325,50 @@ async def process_sync_background(req: SyncRequest, project_id: int):
                                 
                                 ai_res = await analyze_log(full_text, file_context=file_context)
                                 
-                                # Requirement #8: Health Score Calculation Agent
+                                # Health Score Calculation
                                 base_health = 100
-                                if ai_res.get("severity") == "CRITICAL": base_health -= 40
-                                elif ai_res.get("severity") == "ERROR": base_health -= 20
+                                sev = ai_res.get("severity") or ai_res.get("log_type", "INFO")
+                                if sev == "CRITICAL": base_health -= 40
+                                elif sev == "ERROR": base_health -= 20
                                 if lcnt > 5: base_health -= 10
                                 health_score = max(0, base_health)
 
+                                # Updated Mapping for Senior SRE Agent response
                                 ai_payload = {
-                                    "severity": ai_res.get("severity", "INFO"),
-                                    "cause": ai_res.get("root_cause") or ai_res.get("explanation") or "Logged.",
-                                    "impact": ai_res.get("impact", "Nominal."),
-                                    "suggested_fix": "; ".join(ai_res.get("fix_steps", [])) if isinstance(ai_res.get("fix_steps"), list) else ai_res.get("suggested_fix", "None."),
-                                    "system_status": ai_res.get("system_status", "HEALTHY") if ai_res.get("severity") == "INFO" else "DEGRADED",
-                                    "risk_level": ai_res.get("risk_level", f"{100-health_score}%"),
-                                    "severity_score": ai_res.get("severity_score", 0),
+                                    "log_type": ai_res.get("error_type") or ai_res.get("severity_level") or severity,
+                                    "severity": ai_res.get("severity_level", severity),
+                                    "severity_score": ai_res.get("severity_score"),
+                                    "source": log_data["source"],
+                                    "message": ai_res.get("explanation") or log_data["message"],
+                                    "root_cause": ai_res.get("root_cause") or ai_res.get("cause") or "Investigation required.",
+                                    "explanation": ai_res.get("explanation"),
+                                    "detailed_explanation": ai_res.get("detailed_explanation"),
+                                    "impact": ai_res.get("impact"),
+                                    "fix_steps": ai_res.get("fix_steps") or ([ai_res.get("suggested_fix")] if ai_res.get("suggested_fix") else []),
+                                    "commands": (ai_res.get("terminal_commands")[0] if isinstance(ai_res.get("terminal_commands"), list) and ai_res.get("terminal_commands") else ai_res.get("terminal_commands")) or ai_res.get("commands"),
+                                    "affected_file": ai_res.get("affected_file") or log_data["file"],
+                                    "affected_line": ai_res.get("line_number") or ai_res.get("affected_line"),
+                                    "stack_trace": log_data["stack_trace"],
+                                    "confidence": ai_res.get("confidence", 90),
                                     "health_score": health_score,
-                                    "confidence_score": ai_res.get("confidence_score", 0.85),
-                                    "error_type": ai_res.get("error_type", "Metric"),
-                                    "affected_file": ai_res.get("file_path") or ai_res.get("file") or f_path,
-                                    "line_number": ai_res.get("line"),
+                                    "system_status": ai_res.get("system_status") or ("HEALTHY" if ai_res.get("severity_level") in ["INFO", "LOW", "HEALTHY", None] else "DEGRADED"),
+                                    "analysis": ai_res,
                                     "code_snippet": ai_res.get("code_snippet"),
-                                    "generated_fix_code": ai_res.get("generated_fix_code"),
-                                    "analysis": ai_res
+                                    "generated_fix_code": ai_res.get("generated_fix_code") or ai_res.get("correct_code"),
+                                    "prevention_advice": ai_res.get("prevention_advice") or [],
+                                    "session_id": PROJ_SESSIONS.get(pid, "initial")
                                 }
+                                
                                 add_insight(ai_res, full_text)
                                 
-                                # Requirement #5 & #10: Chart Selection Sync
-                                suggested_chart = ai_res.get("chart_suggestion")
-                                final_cm = { **cm, "severity": ai_payload["severity"], "title": ai_res.get("error_type") or cm.get("title") }
-                                if suggested_chart and suggested_chart in analyze_log_and_assign_chart.__self__.CHART_TYPES if hasattr(analyze_log_and_assign_chart, "__self__") else True:
+                                # Chart Selection Sync
+                                suggested_chart = ai_res.get("chart_type") or ai_res.get("chart_suggestion")
+                                final_cm = { 
+                                    **cm, 
+                                    "severity": ai_payload["severity"], 
+                                    "title": ai_res.get("dashboard_label") or ai_res.get("error_type") or cm.get("title") 
+                                }
+                                if suggested_chart:
                                     final_cm["chart_type"] = suggested_chart
 
                                 await manager.broadcast_to_user("default_user", {
@@ -277,9 +386,6 @@ async def process_sync_background(req: SyncRequest, project_id: int):
         except Exception as e:
             logger.error(f"BACKGROUND_SYNC_FATAL_ERROR: {e}")
             db.rollback()
-        logger.error(f"SYNC_ERROR: {str(e)}")
-        # Don't return 500 if possible, return a JSON error so CLI can show it
-        return JSONResponse(status_code=500, content={"error": str(e)})
 
 
 @router.get("/projects/{user_id}")
@@ -287,50 +393,46 @@ async def get_user_projects(user_id: str, db: Session = Depends(get_monitor_db))
     """List all projects for a user optimized for speed."""
     from sqlalchemy import func
     
-    # Subqueries for counts
-    file_count_sub = db.query(
-        ProjectFile.project_id, 
-        func.count(ProjectFile.id).label('count')
-    ).group_by(ProjectFile.project_id).subquery()
-    
-    log_count_sub = db.query(
-        ProjectLog.project_id, 
-        func.count(ProjectLog.id).label('count')
-    ).group_by(ProjectLog.project_id).subquery()
+    # Subqueries for counts (much faster for SQLite than loop-based query)
+    file_count_sub = db.query(ProjectFile.project_id, func.count(ProjectFile.id).label('count')).group_by(ProjectFile.project_id).subquery()
+    log_count_sub = db.query(ProjectLog.project_id, func.count(ProjectLog.id).label('count')).group_by(ProjectLog.project_id).subquery()
 
-    projects = db.query(
-        UserProject,
-        func.coalesce(file_count_sub.c.count, 0),
-        func.coalesce(log_count_sub.c.count, 0)
-    ).outerjoin(
+    projects = db.query(UserProject, func.coalesce(file_count_sub.c.count, 0), func.coalesce(log_count_sub.c.count, 0)).outerjoin(
         file_count_sub, UserProject.id == file_count_sub.c.project_id
     ).outerjoin(
         log_count_sub, UserProject.id == log_count_sub.c.project_id
     ).filter(UserProject.user_id == user_id).all()
 
     results = []
+    now = datetime.utcnow()
     for p, f_count, l_count in projects:
+        last_act = PROJ_ACTIVITY.get(p.id)
+        is_active = (now - last_act).total_seconds() < 15 if last_act else False
+        
         results.append({
             "id": p.id,
             "name": p.project_name,
-            "last_updated": p.last_updated,
+            "last_updated": p.last_updated.isoformat() + "Z" if p.last_updated else None,
             "file_count": f_count,
-            "log_count": l_count
+            "log_count": l_count,
+            "is_active": is_active,
+            "session_id": PROJ_SESSIONS.get(p.id, "initial")
         })
     return results
 
 
 @router.get("/logs/{project_id}")
 async def get_project_logs(project_id: int, limit: int = 200, db: Session = Depends(get_monitor_db)):
-    """Return recent log lines for a project."""
-    project = db.query(UserProject).filter(UserProject.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    logs = db.query(ProjectLog).filter(
-        ProjectLog.project_id == project_id
-    ).order_by(ProjectLog.timestamp.desc()).limit(limit).all()
+    """Return recent log lines for a project, filtered by session if active."""
+    query = db.query(ProjectLog).filter(ProjectLog.project_id == project_id)
+    
+    start_time = PROJ_SESSION_START.get(project_id)
+    if start_time:
+        query = query.filter(ProjectLog.timestamp >= start_time)
+        
+    logs = query.order_by(ProjectLog.timestamp.desc()).limit(limit).all()
     logs.reverse()  # chronological order
-    return [{"log_line": l.log_line, "timestamp": l.timestamp} for l in logs]
+    return [{"log_line": l.log_line, "timestamp": l.timestamp.isoformat() + "Z"} for l in logs]
 
 
 @router.get("/files/{project_id}")
@@ -353,6 +455,105 @@ async def get_file_content(project_id: int, path: str, db: Session = Depends(get
     if not f:
         raise HTTPException(status_code=404, detail="File not found")
     return {"file_path": f.file_path, "content": f.content or ""}
+    
+
+@router.get("/log-groups/{project_id}")
+async def get_log_groups(project_id: int, limit: int = 1000, db: Session = Depends(get_monitor_db)):
+    """Group recent logs by text similarity and return stats."""
+    project = db.query(UserProject).filter(UserProject.id == project_id).first()
+    query = db.query(ProjectLog).filter(ProjectLog.project_id == project_id)
+    
+    start_time = PROJ_SESSION_START.get(project_id)
+    if not start_time:
+        # Fallback: If no session recorded yet, default to last 15 minutes to avoid history flood
+        from datetime import timedelta
+        start_time = datetime.utcnow() - timedelta(minutes=15)
+        
+    query = query.filter(ProjectLog.timestamp >= start_time)
+        
+    logs = query.order_by(ProjectLog.timestamp.desc()).limit(limit).all()
+    logs.reverse() # Reconstruct chronological order for multiline block processing
+    
+    if not logs:
+        return []
+        
+    TIMESTAMP_PAT = _re.compile(r'(\d{4}[-/]\d{2}[-/]\d{2})|(\d{2}:\d{2}:\d{2})|(\d{1,2}:\d{2}\s?(?:AM|PM))')
+    LOG_LEVEL_PAT = _re.compile(r'\b(INFO|DEBUG|WARN|WARNING|ERROR|CRITICAL|FATAL|EXCEPTION|TRACEBACK)\b', _re.I)
+    PROCESS_MARKERS = ["VITE", "Webpack", "React", "Node.js", "Server started", "Ready in", "Compiled", "Listening", "Starting", "npm error", "yarn "]
+    STACK_INDICATORS = ["at ", "at JSX", "File:", "Plugin:", "Internal server error", "traceback", "line ", "│", "├──", "└──"]
+
+    def is_new_event(text):
+        if TIMESTAMP_PAT.search(text): return True
+        if LOG_LEVEL_PAT.search(text) and not text.strip().startswith("at "): return True
+        if any(text.strip().startswith(kw) for kw in PROCESS_MARKERS): return True
+        return False
+
+    def is_stack(text):
+        trimmed = text.strip()
+        if text.startswith(" ") or text.startswith("\t"): return True
+        if any(trimmed.startswith(kw) for kw in STACK_INDICATORS): return True
+        if "^" in text: return True
+        if _re.search(r'([A-Za-z]:\\[^: \n]+|/[^: \n]+)', text): return True
+        return False
+
+    # 1. Reconstruct Blocks from stored lines
+    blocks = []
+    current_lines = []
+    current_ts = None
+    
+    for l in logs:
+        line = l.log_line
+        if is_new_event(line):
+            if current_lines: blocks.append({"lines": current_lines, "ts": current_ts})
+            current_lines = [line]
+            current_ts = l.timestamp
+        elif is_stack(line):
+            if not current_lines: current_ts = l.timestamp
+            current_lines.append(line)
+        else:
+            if current_lines: blocks.append({"lines": current_lines, "ts": current_ts})
+            current_lines = [line]
+            current_ts = l.timestamp
+            
+    if current_lines:
+        blocks.append({"lines": current_lines, "ts": current_ts})
+        
+    # 2. Group Blocks by similarity
+    events_map = {}
+    for b in blocks:
+        full_text = "\n".join(b["lines"])
+        key = b["lines"][0].strip()[:100].lower() # Cluster by the first line of the block
+        
+        if key in events_map:
+            events_map[key]["count"] += 1
+            if b["ts"] > events_map[key]["last_timestamp"]:
+                events_map[key]["last_timestamp"] = b["ts"]
+        else:
+            severity = "INFO"
+            full_lower = full_text.lower()
+            if any(kw in full_lower for kw in ["fatal", "crash", "critical"]): severity = "CRITICAL"
+            elif any(kw in full_lower for kw in ["exception", "failed", "error"]): severity = "ERROR"
+            elif "warn" in full_lower: severity = "WARNING"
+            
+            events_map[key] = {
+                "representative_line": full_text,
+                "count": 1,
+                "last_timestamp": b["ts"],
+                "severity": severity
+            }
+            
+    grouped = []
+    for key, data in events_map.items():
+        grouped.append({
+            "key": key,
+            "representative_line": data["representative_line"],
+            "count": data["count"],
+            "last_timestamp": data["last_timestamp"].isoformat() + "Z", # Fix timezone bug
+            "severity": data["severity"]
+        })
+        
+    grouped.sort(key=lambda x: (x["severity"] == "CRITICAL", x["severity"] == "ERROR", x["count"]), reverse=True)
+    return grouped
 
 
 @router.post("/chat")

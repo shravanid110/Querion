@@ -14,25 +14,37 @@ import * as echarts from 'echarts';
 type Severity = 'CRITICAL' | 'ERROR' | 'WARNING' | 'MINOR' | 'INFO' | 'HEALTHY';
 
 interface AgentInsight {
-    cause: string;
-    impact: string;
-    suggested_fix: string;
+    cause?: string;
+    root_cause?: string;
+    impact?: string;
+    suggested_fix?: string;
     system_status?: 'HEALTHY' | 'UNSTABLE' | 'RISK';
     risk_level?: string;
     severity_score?: number;
     error_type?: string;
     affected_file?: string;
+    affected_line?: string | number;
     severity?: string;
-    line_number?: string | number;
     code_snippet?: string;
     generated_fix_code?: string;
+    correct_code?: string;
     explanation?: string;
+    detailed_explanation?: string;
+    fix_steps?: string[];
+    terminal_commands?: string | string[];
+    commands?: string;
+    session_id?: string;
+    prevention_advice?: string[];
+    dashboard_label?: string;
+    chart_type?: string;
 }
+
 interface ChartMapping {
     chart_type: string; panel: string; title: string; severity: string;
     description?: string; metric_type?: string; recommended_color?: string;
     cause?: string;
 }
+
 interface MonitoringEvent {
     id: string; timestamp: string; log_line: string;
     severity: Severity; service: string; errorType: string; cause: string;
@@ -63,77 +75,52 @@ const PANEL_META: Record<string, { label: string; icon: React.ReactNode; color: 
     GENERIC_MONITORING: { label: 'Monitoring', icon: <Activity className="h-3.5 w-3.5" />, color: 'text-slate-400' },
 };
 
-const CHART_ICONS: Record<string, string> = {
-    gauge: '⏲', ring: '◉', line: '📈', bar: '📊', pie: '🥧', counter: '🔢',
-    table: '📋', logViewer: '📝', stackTrace: '🔍', badge: '🏷', alertPanel: '🚨',
-    securityTable: '🛡', securityBar: '🔒', timeline: '📅',
-};
-
-function deriveEvent(mapping: ChartMapping, ai: AgentInsight, logLine: string, id: string): MonitoringEvent {
-    const sev = (ai?.severity?.toUpperCase() as Severity) || (mapping.severity?.toUpperCase() as Severity) || 'HEALTHY';
+function deriveEvent(mapping: ChartMapping, ai: AgentInsight | any, logLine: string, id: string): MonitoringEvent {
+    const sev = (ai?.severity_level?.toUpperCase() as Severity) || (ai?.severity?.toUpperCase() as Severity) || (mapping.severity?.toUpperCase() as Severity) || 'HEALTHY';
     const pm = PANEL_META[mapping.panel] || PANEL_META.GENERIC_MONITORING;
     
     // Explicit anomaly detection based on AI system_status
     const isUnstable = ai?.system_status === 'UNSTABLE';
     const isRisk = ai?.system_status === 'RISK';
-    const hasAnomaly = isUnstable || isRisk || sev === 'CRITICAL';
+    const hasAnomaly = isUnstable || isRisk || sev === 'CRITICAL' || sev === 'ERROR';
     
     const anomalyTitle = isUnstable 
         ? `SYSTEM UNSTABLE: ${ai.error_type || mapping.title}` 
         : (isRisk ? `PERFORMANCE RISK: ${ai.error_type || mapping.title}` : undefined);
 
     // Build detailed explanation
-    const explanation = buildExplanation(mapping, ai, logLine);
-    const fixData = buildFixSteps(ai?.suggested_fix || '', mapping.metric_type || 'general');
+    const explanation = ai?.detailed_explanation || ai?.explanation || buildExplanation(mapping, ai, logLine);
+    
+    // Build fix data from new AI fields
+    const fixData = {
+        steps: ai?.fix_steps || (ai?.suggested_fix ? [ai.suggested_fix] : ['Monitor the situation', 'Check recent deployments']),
+        command: (Array.isArray(ai?.terminal_commands) ? ai.terminal_commands[0] : ai?.terminal_commands) || ai?.commands || 'npm run logs'
+    };
 
     return {
         id, timestamp: new Date().toISOString(), log_line: logLine || `[log event]`,
         severity: sev, service: pm.label, errorType: ai?.error_type || mapping.metric_type || 'general',
-        cause: ai?.cause || mapping.description || 'Log pattern detected.',
-        chartType: mapping.chart_type || 'line',
-        chartTitle: mapping.title || 'Log Event',
+        cause: ai?.root_cause || ai?.cause || mapping.description || 'Log pattern detected.',
+        chartType: mapping.chart_type || (ai?.chart_type) || 'line',
+        chartTitle: mapping.title || ai?.dashboard_label || 'Log Event',
         chartPanel: mapping.panel || 'GENERIC_MONITORING',
         insight: ai || { cause: 'Analyzing architectural context...', impact: 'Evaluating system stability...', suggested_fix: 'Stand by for detailed fix.' },
         hasAnomaly, anomalyTitle,
-        anomalyAction: ai?.suggested_fix || 'Investigating logs...',
+        anomalyAction: ai?.suggested_fix || (ai?.fix_steps?.length ? ai.fix_steps[0] : 'Investigating logs...'),
         explanation,
         fixSteps: fixData,
     };
 }
 
 function buildExplanation(mapping: ChartMapping, ai: AgentInsight, log: string): string {
-    if (ai?.explanation) return ai.explanation; // Use raw AI explanation if available
+    if (ai?.explanation) return ai.explanation; 
     
-    const cause = ai?.cause || mapping.description || 'A system event was captured.';
+    const cause = ai?.root_cause || ai?.cause || mapping.description || 'A system event was captured.';
     const impact = ai?.impact || 'Monitoring service is evaluating the effects on upstream dependencies.';
     const subsystem = (mapping.panel || 'GENERIC').replace(/_/g, ' ').toLowerCase();
     const fileInfo = ai?.affected_file ? ` The issue originated in ${ai.affected_file}.` : '';
     
     return `ROOT CAUSE: ${cause} ARCHITECTURAL IMPACT: ${impact} System context: Detected in the ${subsystem} layer.${fileInfo}`;
-}
-
-function buildFixSteps(fix: string, type: string): { steps: string[]; command?: string } {
-    const defaultFix = { steps: ['Monitor the situation', 'Check recent deployments', 'Review system logs'], command: 'npm run logs' };
-
-    // Commands mapping based on metric types
-    const commands: Record<string, string> = {
-        connection: 'docker restart postgres-db',
-        performance: 'npm run benchmark',
-        access: 'npm run auth:reverify',
-        usage: 'top -n 1 -b | head -n 20',
-        http_error: 'curl -v http://localhost:4000/api/health',
-        runtime_error: 'npm run debug -- --trace-warnings',
-        io_error: 'ls -larth /var/log/querion',
-        availability: 'systemctl status querion-backend'
-    };
-
-    if (!fix) return defaultFix;
-
-    const sentences = fix.split(/[.;]/).map(s => s.trim()).filter(Boolean);
-    return {
-        steps: sentences.length ? sentences : [fix],
-        command: commands[type] || 'npm run logs'
-    };
 }
 
 /* ─── Animated Counter ───────────────────────────────────────────────────────── */
@@ -177,8 +164,8 @@ function TypingText({ text, speed = 18 }: { text: string; speed?: number }) {
 
 /* ─── Severity Meter ─────────────────────────────────────────────────────────── */
 function SeverityMeter({ severity }: { severity: Severity }) {
-    const s = SEV_STYLES[severity];
-    const pct = SEV_PCT[severity];
+    const s = SEV_STYLES[severity] || SEV_STYLES.INFO;
+    const pct = SEV_PCT[severity] || 50;
     return (
         <div className="space-y-1.5">
             <div className="flex justify-between items-center">
@@ -197,6 +184,16 @@ function SeverityMeter({ severity }: { severity: Severity }) {
                 <span className="text-[7px] text-slate-700">LOW</span>
                 <span className="text-[7px] text-slate-700">HIGH</span>
             </div>
+        </div>
+    );
+}
+
+/* ─── Info Row ───────────────────────────────────────────────────────────────── */
+function InfoRow({ label, value, color }: { label: string; value: string; color?: string }) {
+    return (
+        <div className="flex flex-col gap-0.5">
+            <span className="text-[7px] font-black text-slate-600 uppercase tracking-widest">{label}</span>
+            <span className={`text-[10px] font-bold truncate ${color || 'text-slate-300'}`}>{value || '—'}</span>
         </div>
     );
 }
@@ -308,7 +305,7 @@ function EventCard({ event, index, metrics }: { event: MonitoringEvent; index: n
                                         <div>
                                             <span className="text-[7px] font-black text-slate-600 uppercase tracking-widest block mb-1">Root Cause Analysis</span>
                                             <p className="text-[9px] text-slate-300 font-bold leading-relaxed">
-                                                <TypingText text={event.insight.cause || event.cause} speed={12} />
+                                                <TypingText text={event.insight.root_cause || event.insight.cause || event.cause} speed={12} />
                                             </p>
                                         </div>
                                         <div>
@@ -329,10 +326,10 @@ function EventCard({ event, index, metrics }: { event: MonitoringEvent; index: n
                                                 {event.insight.system_status || 'HEALTHY'}
                                             </span>
                                         </div>
-                                        {event.insight.risk_level && (
+                                        {event.insight.severity_score && (
                                             <div className="px-2 py-0.5 rounded-full bg-black/50 border border-white/10 flex items-center gap-1.5">
-                                                <span className="text-[8px] font-black text-slate-500 uppercase">Risk</span>
-                                                <span className={`text-[10px] font-mono font-black ${event.insight.system_status === 'UNSTABLE' ? 'text-red-500' : 'text-emerald-400'}`}>{event.insight.risk_level}</span>
+                                                <span className="text-[8px] font-black text-slate-500 uppercase">Score</span>
+                                                <span className={`text-[10px] font-mono font-black ${event.insight.system_status === 'UNSTABLE' ? 'text-red-500' : 'text-emerald-400'}`}>{event.insight.severity_score}</span>
                                             </div>
                                         )}
                                     </div>
@@ -345,7 +342,7 @@ function EventCard({ event, index, metrics }: { event: MonitoringEvent; index: n
                                         </div>
                                         <p className="text-[9px] text-slate-400 leading-relaxed font-medium">
                                             {event.insight.system_status === 'UNSTABLE' 
-                                                ? `CRITICAL ERROR: ${event.insight.error_type || 'Syntax Exception'} detected. This preventing compilation and rendering. High risk to service availability.`
+                                                ? `CRITICAL ERROR: ${event.insight.error_type || 'Syntax Exception'} detected. This prevents compilation and rendering. High risk to availability.`
                                                 : `Log indicates routine service health with ${event.insight.severity || 'INFO'} level. The system is operating within nominal thresholds.`}
                                         </p>
                                     </div>
@@ -356,32 +353,31 @@ function EventCard({ event, index, metrics }: { event: MonitoringEvent; index: n
                             <div className="bg-gradient-to-br from-slate-900/80 to-slate-950/80 border border-slate-700/50 rounded-2xl p-5 space-y-4">
                                 <div className="flex items-center gap-3">
                                     <Sparkles className="h-4 w-4 text-indigo-400" />
-                                    <span className="text-xs font-black text-indigo-400 tracking-widest uppercase">AI Log Explanation</span>
+                                    <span className="text-xs font-black text-indigo-400 tracking-widest uppercase">Deep Observability Synopsis</span>
                                 </div>
                                 <div className="space-y-3">
                                     <p className="text-[12px] text-slate-300 leading-relaxed font-sans">
-                                        {event.insight.system_status === 'UNSTABLE' && (
-                                            <span className="text-red-500 font-black mr-2 bg-red-500/10 px-1.5 py-0.5 rounded border border-red-500/20">CRITICAL SYSTEM ANALYSIS:</span>
-                                        )}
                                         {event.explanation}
                                     </p>
-                                    {event.insight.system_status === 'UNSTABLE' && (
+                                    {event.insight.severity_score && (
                                         <div className="flex flex-wrap gap-2 text-[10px] items-center">
                                             <span className="text-slate-500 font-bold uppercase tracking-widest">Affected Stack:</span>
                                             <span className="text-cyan-400 font-mono bg-cyan-400/5 px-2 py-0.5 rounded border border-cyan-400/10">{event.service} / {event.insight.affected_file || 'Core'}</span>
                                             <span className="text-slate-500 font-bold uppercase tracking-widest ml-2">Severity Score:</span>
-                                            <span className="text-red-400 font-black">{event.insight.severity_score || 95}/100</span>
+                                            <span className="text-red-400 font-black">{event.insight.severity_score}/100</span>
                                         </div>
                                     )}
                                 </div>
 
-                                <button
-                                    onClick={() => setShowFix(!showFix)}
-                                    className="flex items-center gap-2 text-[9px] font-black text-emerald-400 tracking-widest uppercase hover:text-emerald-300 transition-colors">
-                                    <Hash className="h-3 w-3" />
-                                    {showFix ? 'HIDE' : 'SHOW'} STEP-BY-STEP FIX
-                                    {showFix ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                                </button>
+                                {event.severity !== 'HEALTHY' && event.severity !== 'INFO' && (
+                                    <button
+                                        onClick={() => setShowFix(!showFix)}
+                                        className="flex items-center gap-2 text-[9px] font-black text-emerald-400 tracking-widest uppercase hover:text-emerald-300 transition-colors">
+                                        <Hash className="h-3 w-3" />
+                                        {showFix ? 'HIDE' : 'SHOW'} STEP-BY-STEP INVESTIGATION & FIX
+                                        {showFix ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                                    </button>
+                                )}
 
                                 <AnimatePresence>
                                     {showFix && (
@@ -408,6 +404,35 @@ function EventCard({ event, index, metrics }: { event: MonitoringEvent; index: n
                                                     </div>
                                                 </div>
                                             )}
+
+                                            {(event.insight.generated_fix_code || event.insight.correct_code) && (
+                                                <div className="bg-slate-950 rounded-xl border border-emerald-500/20 overflow-hidden">
+                                                    <div className="bg-emerald-500/10 px-3 py-1.5 border-b border-emerald-500/20 flex justify-between items-center">
+                                                        <span className="text-[8px] font-black text-emerald-400 tracking-widest uppercase">Generated Fix Code</span>
+                                                        <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+                                                    </div>
+                                                    <pre className="p-4 text-[10px] font-mono text-emerald-300 overflow-x-auto whitespace-pre">
+                                                        {event.insight.generated_fix_code || event.insight.correct_code}
+                                                    </pre>
+                                                </div>
+                                            )}
+
+                                            {event.insight.prevention_advice && event.insight.prevention_advice.length > 0 && (
+                                                <div className="mt-4 pt-4 border-t border-slate-800/50">
+                                                    <div className="flex items-center gap-2 mb-3">
+                                                        <ShieldAlert className="h-3.5 w-3.5 text-blue-400" />
+                                                        <span className="text-[9px] font-black text-blue-400 tracking-widest uppercase">Architectural Prevention</span>
+                                                    </div>
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                                        {event.insight.prevention_advice.map((adv: string, i: number) => (
+                                                            <div key={i} className="bg-blue-500/5 border border-blue-500/10 rounded-lg p-2 text-[9px] text-slate-400 flex items-center gap-2">
+                                                                <div className="w-1 h-1 bg-blue-500 rounded-full shrink-0" />
+                                                                {adv}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
                                         </motion.div>
                                     )}
                                 </AnimatePresence>
@@ -417,15 +442,6 @@ function EventCard({ event, index, metrics }: { event: MonitoringEvent; index: n
                 )}
             </AnimatePresence>
         </motion.div>
-    );
-}
-
-function InfoRow({ label, value, color }: { label: string; value: string; color?: string }) {
-    return (
-        <div className="flex flex-col gap-0.5">
-            <span className="text-[7px] font-black text-slate-600 uppercase tracking-widest">{label}</span>
-            <span className={`text-[10px] font-bold truncate ${color || 'text-slate-300'}`}>{value || '—'}</span>
-        </div>
     );
 }
 
@@ -446,9 +462,9 @@ export default function AIObservabilityPanel() {
     const [connected, setConnected] = useState(false);
     const [pipelineActive, setPipelineActive] = useState(0);
     const [metrics, setMetrics] = useState<any>(null);
-    const counterRef = useRef(0);
+    const [currentSession, setCurrentSession] = useState<string | null>(null);
 
-    const critical = events.filter(e => e.severity === 'CRITICAL').length;
+    const critical = events.filter(e => e.severity === 'CRITICAL' || e.severity === 'ERROR').length;
     const warnings = events.filter(e => e.severity === 'WARNING').length;
     const anomalies = events.filter(e => e.hasAnomaly).length;
 
@@ -463,7 +479,7 @@ export default function AIObservabilityPanel() {
         const connect = () => {
             if (!isMounted) return;
             try {
-                const ws = new WebSocket('ws://localhost:4000/ws/monitor');
+                const ws = new WebSocket('ws://127.0.0.1:4000/ws/monitor');
                 ws.onopen = () => { if (isMounted) setConnected(true); };
                 ws.onclose = () => { if (isMounted) { setConnected(false); setTimeout(connect, 4000); } };
                 ws.onerror = () => ws.close();
@@ -475,10 +491,16 @@ export default function AIObservabilityPanel() {
                             const mapping = data.mapping as ChartMapping;
                             const ai = data.ai as AgentInsight;
                             const logLine = String(data.log_line || data.log?.message || '');
-                            const msgId = data.log_id || `evt-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+                            const msgId = data.log_id || `evt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+
+                            if (ai?.session_id && currentSession && ai.session_id !== currentSession) {
+                                setEvents([]); 
+                                setCurrentSession(ai.session_id);
+                            } else if (ai?.session_id && !currentSession) {
+                                setCurrentSession(ai.session_id);
+                            }
 
                             setEvents(prev => {
-                                // 1. If this is an update with AI data, find the matching card by ID
                                 if (ai) {
                                     const existingIdx = prev.findIndex(e => e.id === msgId);
                                     if (existingIdx !== -1) {
@@ -487,15 +509,11 @@ export default function AIObservabilityPanel() {
                                         return updated;
                                     }
                                 }
-
-                                // 2. If we already have this exact message ID, don't add it as a new card
                                 if (prev.some(e => e.id === msgId)) return prev;
-
-                                // 3. Add as new event (at the top)
                                 return [
                                     deriveEvent(mapping, ai, logLine, msgId),
                                     ...prev
-                                ].slice(0, 50); // Increased slice to show more logs
+                                ].slice(0, 50);
                             });
                         } else if (data.type === 'real_metrics') {
                             setMetrics(data.metrics);
@@ -512,7 +530,6 @@ export default function AIObservabilityPanel() {
         <div className="mt-10 pt-10 border-t border-slate-800/50 space-y-8"
             style={{ background: 'linear-gradient(180deg, transparent 0%, rgba(99,102,241,0.02) 50%, transparent 100%)' }}>
 
-            {/* ── Header ── */}
             <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
                 <div>
                     <div className="flex items-center gap-3 mb-1">
@@ -525,7 +542,7 @@ export default function AIObservabilityPanel() {
                                 AI OBSERVABILITY INTELLIGENCE
                             </h2>
                             <p className="text-[9px] text-slate-500 uppercase font-bold tracking-[0.3em] mt-0.5">
-                                4-Agent Multi-System · Real-Time Log Analysis · Pattern Detection
+                                Senior SRE Multi-Agent · Real-Time Log Analysis · Code Deep Scan
                             </p>
                         </div>
                     </div>
@@ -536,7 +553,6 @@ export default function AIObservabilityPanel() {
                 </div>
             </div>
 
-            {/* ── Stats ── */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {[
                     { label: 'Total Analyzed', val: events.length, color: 'text-indigo-400', border: 'border-indigo-500/20', icon: <Activity className="h-4 w-4" /> },
@@ -555,7 +571,6 @@ export default function AIObservabilityPanel() {
                 ))}
             </div>
 
-            {/* ── Animated Pipeline ── */}
             <div className="bg-slate-900/40 backdrop-blur-sm border border-slate-800/60 rounded-2xl p-4 overflow-x-auto">
                 <div className="flex items-center gap-2 min-w-max">
                     {PIPELINE.map((node, i) => (
@@ -576,7 +591,6 @@ export default function AIObservabilityPanel() {
                 </div>
             </div>
 
-            {/* ── Events Feed ── */}
             <div className="space-y-3">
                 {events.length === 0 ? (
                     <div className="bg-slate-900/30 border border-slate-800 rounded-2xl p-12 flex flex-col items-center justify-center gap-5">
@@ -588,15 +602,7 @@ export default function AIObservabilityPanel() {
                         </div>
                         <div className="text-center">
                             <p className="text-slate-400 font-bold">Waiting for backend logs...</p>
-                            <p className="text-slate-600 text-xs mt-1">The 4-agent AI will analyze and explain each log here in real time.</p>
-                        </div>
-                        <div className="flex items-center gap-3">
-                            {['bg-indigo-500', 'bg-cyan-500', 'bg-violet-500', 'bg-amber-500'].map((c, i) => (
-                                <motion.div key={i} animate={{ scale: [1, 1.2, 1] }}
-                                    transition={{ duration: 1, repeat: Infinity, delay: i * 0.2 }}
-                                    className={`w-4 h-4 rounded-full ${c} opacity-60`} />
-                            ))}
-                            <span className="text-[9px] text-slate-600 font-black tracking-widest">4 AGENTS READY</span>
+                            <p className="text-slate-600 text-xs mt-1">The Senior SRE AI will analyze and explain each log here in real time.</p>
                         </div>
                     </div>
                 ) : (
@@ -604,7 +610,7 @@ export default function AIObservabilityPanel() {
                         <div className="flex items-center gap-2">
                             <Clock className="h-3.5 w-3.5 text-slate-600" />
                             <span className="text-[9px] font-black text-slate-500 tracking-widest uppercase">
-                                Live Analysis Feed · {events.length} events
+                                Real-Time Investigation Feed · {events.length} events
                             </span>
                         </div>
                         <AnimatePresence>
@@ -617,7 +623,6 @@ export default function AIObservabilityPanel() {
     );
 }
 
-/* ─── ECharts Renderer ───────────────────────────────────────────────────────── */
 function EChartRenderer({ type, severity, metrics, title }: {
     type: string,
     severity: Severity,
@@ -627,10 +632,8 @@ function EChartRenderer({ type, severity, metrics, title }: {
     const chartRef = useRef<HTMLDivElement>(null);
     const chartInstance = useRef<echarts.ECharts | null>(null);
 
-    // Initial setup and static options
     useEffect(() => {
         if (!chartRef.current) return;
-
         if (!chartInstance.current) {
             chartInstance.current = echarts.init(chartRef.current, 'dark');
         }
@@ -647,17 +650,11 @@ function EChartRenderer({ type, severity, metrics, title }: {
         let baseOption: any = {
             backgroundColor: 'transparent',
             animation: true,
-            animationDuration: 1200,
             tooltip: {
                 show: true,
                 backgroundColor: 'rgba(15, 23, 42, 0.9)',
                 borderColor: 'rgba(99, 102, 241, 0.3)',
-                textStyle: { color: '#fff', fontSize: 9, fontWeight: 'bold' },
-                borderRadius: 8,
-                padding: [8, 12],
-                borderWidth: 1,
-                shadowBlur: 10,
-                shadowColor: 'rgba(0,0,0,0.5)',
+                textStyle: { color: '#fff', fontSize: 9 },
                 confine: true
             },
             grid: { top: 10, bottom: 20, left: 10, right: 10 },
@@ -670,127 +667,24 @@ function EChartRenderer({ type, severity, metrics, title }: {
                 axisLine: {
                     lineStyle: {
                         width: 10,
-                        color: [
-                            [0.3, new echarts.graphic.LinearGradient(0, 0, 1, 0, [{ offset: 0, color: '#ef4444' }, { offset: 1, color: '#f87171' }])],
-                            [0.7, new echarts.graphic.LinearGradient(0, 0, 1, 0, [{ offset: 0, color: '#f59e0b' }, { offset: 1, color: '#fbbf24' }])],
-                            [1, new echarts.graphic.LinearGradient(0, 0, 1, 0, [{ offset: 0, color: '#10b981' }, { offset: 1, color: '#34d399' }])]
-                        ],
-                        shadowBlur: 15,
-                        shadowColor: 'rgba(0,0,0,0.5)'
+                        color: [[0.3, '#ef4444'], [0.7, '#f59e0b'], [1, '#10b981']]
                     }
                 },
-                progress: { show: true, width: 10, itemStyle: { shadowBlur: 10, shadowColor: 'rgba(255,255,255,0.2)' } },
-                pointer: { icon: 'path://M12.8,0.7l12,40.1H0.7L12.8,0.7z', length: '12%', width: 6, offsetCenter: [0, '-40%'], itemStyle: { color: 'auto' } },
-                axisTick: { show: false },
-                splitLine: { show: false },
-                axisLabel: { show: false },
-                detail: { fontSize: 22, offsetCenter: [0, '20%'], valueAnimation: true, formatter: '{value}%', color: '#fff', fontWeight: 'black', textShadowBlur: 10, textShadowColor: 'rgba(255,255,255,0.3)' },
-                data: [{ value: 0 }]
+                detail: { fontSize: 18, color: '#fff', formatter: '{value}%' },
+                data: [{ value: Math.floor(Math.random() * 40) + 60 }]
             }];
         } else if (chartType === 'pie') {
             baseOption.series = [{
-                type: 'pie', radius: ['45%', '75%'], center: ['50%', '50%'],
-                avoidLabelOverlap: false,
-                itemStyle: {
-                    borderRadius: 12,
-                    borderColor: '#0f172a',
-                    borderWidth: 3,
-                    shadowBlur: 30,
-                    shadowColor: 'rgba(0,0,0,0.8)',
-                },
+                type: 'pie', radius: ['40%', '70%'],
                 label: { show: false },
-                emphasis: {
-                    scale: true,
-                    scaleSize: 10,
-                },
-                data: [
-                    { value: 0, name: 'Errors', itemStyle: { color: new echarts.graphic.RadialGradient(0.5, 0.5, 1, [{ offset: 0, color: '#ff4d4d' }, { offset: 1, color: '#990000' }]) } },
-                    { value: 0, name: 'Warning', itemStyle: { color: new echarts.graphic.RadialGradient(0.5, 0.5, 1, [{ offset: 0, color: '#ffae00' }, { offset: 1, color: '#996a00' }]) } }
-                ]
-            }];
-        } else if (chartType === 'line') {
-            baseOption.xAxis = { type: 'category', data: ['-25m', '-20m', '-15m', '-10m', '-5m', 'Now'], show: true, axisLabel: { color: '#475569', fontSize: 7, fontWeight: 'bold' }, axisLine: { show: false }, axisTick: { show: false } };
-            baseOption.yAxis = { type: 'value', show: false };
-            baseOption.series = [{
-                type: 'line',
-                smooth: true,
-                symbol: 'circle',
-                symbolSize: 8,
-                lineStyle: {
-                    width: 5,
-                    color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [{ offset: 0, color: '#6366f1' }, { offset: 1, color: '#e066ff' }]),
-                    shadowBlur: 15,
-                    shadowColor: 'rgba(99, 102, 241, 0.6)',
-                    shadowOffsetY: 10
-                },
-                areaStyle: {
-                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: 'rgba(99, 102, 241, 0.4)' }, { offset: 1, color: 'transparent' }]),
-                    opacity: 0.8
-                },
-                itemStyle: { color: '#fff', borderColor: '#818cf8', borderWidth: 3 },
-                data: [0, 0, 0, 0, 0, 0]
-            }];
-        } else if (chartType === 'stackTrace') {
-            baseOption.radar = {
-                indicator: [
-                    { name: 'Complexity', max: 100 },
-                    { name: 'Depth', max: 100 },
-                    { name: 'Entropy', max: 100 },
-                    { name: 'Impact', max: 100 },
-                    { name: 'Risk', max: 100 }
-                ],
-                shape: 'circle',
-                splitNumber: 4,
-                axisName: { color: '#64748b', fontSize: 7, fontWeight: 'bold' },
-                splitLine: { lineStyle: { color: 'rgba(99, 102, 241, 0.1)' } },
-                splitArea: { show: false },
-                axisLine: { lineStyle: { color: 'rgba(99, 102, 241, 0.1)' } }
-            };
-            baseOption.series = [{
-                type: 'radar',
-                data: [
-                    {
-                        value: [85, 92, 78, 95, 88],
-                        name: 'Error Context',
-                        itemStyle: { color: '#f43f5e' },
-                        areaStyle: { color: 'rgba(244, 63, 94, 0.3)' },
-                        lineStyle: { width: 2, color: '#f43f5e', shadowBlur: 10, shadowColor: '#f43f5e' }
-                    }
-                ]
-            }];
-        } else if (chartType === 'bar') {
-            baseOption.xAxis = { type: 'value', show: false };
-            baseOption.yAxis = {
-                type: 'category',
-                data: ['API', 'DB', 'Auth', 'OSS'],
-                show: true,
-                axisLabel: { color: '#94a3b8', fontSize: 8, fontWeight: 'black', margin: 10 },
-                axisLine: { show: false },
-                axisTick: { show: false }
-            };
-            baseOption.series = [{
-                type: 'bar',
-                itemStyle: {
-                    borderRadius: [0, 10, 10, 0],
-                    color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [{ offset: 0, color: '#22d3ee' }, { offset: 1, color: '#3b82f6' }]),
-                    shadowBlur: 12,
-                    shadowColor: 'rgba(59, 130, 246, 0.5)',
-                    shadowOffsetX: 4
-                },
-                barWidth: '45%',
-                data: [0, 0, 0, 0]
+                data: [{ value: 33, name: 'A' }, { value: 67, name: 'B' }]
             }];
         } else {
-            // High-end Donut for others
+            baseOption.xAxis = { type: 'category', data: ['T1', 'T2', 'T3', 'T4', 'T5'], show: false };
+            baseOption.yAxis = { show: false };
             baseOption.series = [{
-                type: 'pie',
-                radius: ['65%', '85%'],
-                data: [
-                    { value: 82, itemStyle: { color: activeColor, shadowBlur: 15, shadowColor: activeColor } },
-                    { value: 18, itemStyle: { color: 'rgba(255,255,255,0.03)' } }
-                ],
-                label: { show: false },
-                itemStyle: { borderRadius: 4 }
+                type: 'line', smooth: true, areaStyle: { opacity: 0.2 },
+                data: Array.from({ length: 5 }, () => Math.random() * 100)
             }];
         }
 
@@ -798,45 +692,8 @@ function EChartRenderer({ type, severity, metrics, title }: {
 
         const handleResize = () => chartInstance.current?.resize();
         window.addEventListener('resize', handleResize);
-        return () => {
-            window.removeEventListener('resize', handleResize);
-            chartInstance.current?.dispose();
-            chartInstance.current = null;
-        };
-    }, [type, severity, title]);
+        return () => window.removeEventListener('resize', handleResize);
+    }, [type, severity, metrics]);
 
-    // Dynamic data updates
-    useEffect(() => {
-        if (!chartInstance.current) return;
-
-        const chartType = type.toLowerCase();
-        let updateData: any = {};
-
-        if (chartType === 'gauge') {
-            const health = metrics ? Math.max(5, 100 - (metrics.error_rate * 4) - (metrics.warning_count * 1.5)) : 94;
-            updateData = { series: [{ data: [{ value: health }] }] };
-        } else if (chartType === 'pie') {
-            const errorCount = (metrics?.error_rate || 0) + (severity === 'CRITICAL' ? 12 : 2);
-            const warningCount = (metrics?.warning_count || 0) + (severity === 'WARNING' ? 8 : 4);
-            const successCount = (metrics?.status_codes?.['200'] || 45);
-            updateData = {
-                series: [{
-                    data: [
-                        { value: errorCount, name: 'Errors' },
-                        { value: warningCount, name: 'Warning' },
-                        { value: successCount, name: 'Success' }
-                    ]
-                }]
-            };
-        } else if (chartType === 'line') {
-            const rps = metrics?.requests_per_second || 1.2;
-            updateData = { series: [{ data: [12, 18, 15, 25, 22, 30].map(v => Math.round(v * rps + Math.random() * 5)) }] };
-        } else if (chartType === 'bar') {
-            updateData = { series: [{ data: [88, 94, 76, 91].map(v => Math.round(v * (metrics ? 0.9 + Math.random() * 0.2 : 1))) }] };
-        }
-
-        chartInstance.current.setOption(updateData, { notMerge: false });
-    }, [metrics, type, severity]);
-
-    return <div ref={chartRef} className="w-full h-full" style={{ minHeight: '130px' }} />;
+    return <div ref={chartRef} className="w-full h-full" />;
 }

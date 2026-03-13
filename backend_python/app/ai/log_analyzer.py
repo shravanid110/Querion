@@ -1,84 +1,105 @@
 import httpx
 import json
 import logging
+import re
+from typing import Dict, Any
 
 logger = logging.getLogger(__name__)
 
 async def analyze_log(log_text: str, file_context: str = None) -> dict:
-    # ── QUERION MASTER AI BRAIN PROMPT ──
-    master_prompt = f"""You are the "Querion Autonomous Observability AI".
-You are an intelligent Site Reliability Engineering (SRE) system designed to deeply understand system logs, inspect project source code, and identify the real root cause of issues.
+    """
+    Querion AI Observability Engine - Senior SRE Agent.
+    Performs deep analysis of grouped logs, correlates with source code, 
+    and generates root cause insights with fixes.
+    """
+    
+    master_prompt = f"""You are the Querion AI Observability Engine.
+You are an autonomous Site Reliability Engineering (SRE) system responsible for understanding software logs, scanning project code, identifying failures, and generating root cause explanations with solutions.
 
-YOUR RESPONSIBILITIES:
-1. Analyze logs (backend, build, runtime, API, DB).
-2. Detect failures, warnings, and successful executions.
-3. Correlate logs with the provided project source code context.
-4. Identify exactly where the problem originates in the codebase.
+Analyze the following grouped log event and project file context deeply to produce observability insights.
 
-ERROR CLASSIFICATION:
-- CRITICAL (Score 90-100): Syntax errors, build failures, compilation errors, fatal exceptions.
-- ERROR (Score 70-89): Runtime failures, 500 API errors, DB timing issues.
-- WARNING (Score 40-69): Deprecated functions, slow performance, partial degradation.
-- INFO (Score 0-10): Successful processes, startup messages.
-
-IMPACT ANALYSIS:
-- UNSTABLE: App cannot run or render.
-- RISK: Degraded performance or background failure.
-- HEALTHY: Monitoring success/normal operations.
-
-LOG TO ANALYZE:
+LOG EVENT:
 {log_text}
 
-FILE SOURCE CONTEXT:
-{file_context or "No source code provided."}
+PROJECT FILE CONTEXT:
+{file_context or "No source code available."}
 
-INSTRUCTIONS:
-- Trace stack traces back to the original file.
-- If syntax/variable typo is present (e.g. 'setS tudents'), pinpoint it.
-- Suggest a chart from: bar, pie, line, gauge, sankey, heatmap, treemap, waterfall.
+TASKS:
+1. Identify whether the log indicates: error, warning, or successful execution.
+2. If an error exists: find the affected file, detect the line number, analyze the code snippet, explain why the error occurred.
+3. Generate step-by-step instructions to fix the issue.
+4. Provide corrected code if applicable.
+5. Generate terminal commands if needed.
+6. Suggest the best chart to visualize this event in the monitoring dashboard (pie, bar, line, gauge, sankey).
+7. If no error exists: explain what the log indicates and why the system is working correctly.
+
+DEBUGGING FRAMEWORK:
+- Error Identification (Syntax, Runtime, Logical, Dependency, Build, Command)
+- Error Message Analysis (File, Line, Column)
+- Code Context Analysis (Imports, Variables, Brackets, Syntax)
+- Root Cause Detection
+- Fix Generation
+- Prevention Advice
+- Debugging Flow Explanation
+
+SEVERITY CLASSIFICATION:
+- CRITICAL (Syntax errors, Build failures, Server crashes) -> Score 90-100
+- ERROR (Runtime failures, API errors, DB errors) -> Score 70-89
+- WARNING (Slow operations, Deprecated features) -> Score 40-69
+- INFO (Normal execution, Server start, Success) -> Score 0-39
+
+SYSTEM STATUS:
+- UNSTABLE: cannot run or render.
+- RISK: connectivity/degraded.
+- HEALTHY: normal operation.
+
+OUTPUT RULES:
 - Return ONLY JSON.
+- Never mention the name of the AI model.
+- Be deep, structured, and educational.
 
-JSON STRUCTURE:
+REQUIRED JSON FORMAT:
 {{
-  "severity": "CRITICAL/ERROR/WARNING/INFO",
-  "error_type": "",
-  "file": "",
-  "file_path": "",
-  "line": "",
-  "code_snippet": "",
-  "root_cause": "",
-  "impact": "",
-  "explanation": "",
-  "fix_steps": [],
-  "generated_fix_code": "",
-  "system_status": "UNSTABLE/RISK/HEALTHY",
-  "risk_level": "percentage",
-  "severity_score": number,
-  "confidence_score": 0.0-1.0,
-  "chart_suggestion": "chart_type"
+  "severity_level": "CRITICAL",
+  "severity_score": 95,
+  "error_type": "...",
+  "system_status": "UNSTABLE",
+  "affected_file": "...",
+  "file_path": "...",
+  "line_number": "...",
+  "code_snippet": "...",
+  "root_cause": "...",
+  "explanation": "...",
+  "detailed_explanation": "...",
+  "impact": "...",
+  "fix_steps": ["Step 1...", "Step 2..."],
+  "generated_fix_code": "...",
+  "correct_code": "...",
+  "terminal_commands": ["..."],
+  "prevention_advice": ["..."],
+  "chart_type": "bar",
+  "dashboard_label": "..."
 }}
 """
-    prompt = master_prompt
 
     try:
         async with httpx.AsyncClient() as client:
+            # Using phi3 as requested model in context
             response = await client.post("http://127.0.0.1:11434/api/generate", json={
                 "model": "phi3:latest",
-                "prompt": prompt,
+                "prompt": master_prompt,
                 "stream": False
-            }, timeout=30.0)
+            }, timeout=45.0)
             
             if response.status_code == 200:
                 data = response.json()
                 result_text = data.get("response", "")
                 
-                # Attempt to extract JSON from response
-                import re
+                # Attempt to extract JSON
                 json_match = re.search(r'```json(.*?)```', result_text, re.DOTALL)
                 if json_match:
                     result_text = json_match.group(1).strip()
                 else:
-                    # sometimes phi3 might output without code blocks
                     json_start = result_text.find('{')
                     json_end = result_text.rfind('}')
                     if json_start != -1 and json_end != -1:
@@ -87,36 +108,19 @@ JSON STRUCTURE:
                 try:
                     return json.loads(result_text)
                 except Exception as e:
-                    logger.error(f"Failed to parse Ollama JSON: {e} | Text: {result_text}")
+                    logger.error(f"AI_JSON_PARSE_FAILED: {e}")
+            else:
+                logger.error(f"AI_SERVICE_HTTP_ERROR: {response.status_code}")
+                
     except Exception as e:
-        logger.error(f"Error calling local Ollama Phi3: {e}")
+        logger.error(f"AI_INVESTIGATION_SERVICE_UNREACHABLE: {e}")
         
-    # Emergency Fallback - Simple regex based analysis if AI is offline
-    is_err = any(kw in log_text.lower() for kw in ["error", "fail", "unexpected", "exception", "failed"])
-    err_type = "System Log"
-    cause = "Routine log execution."
-    if "unexpected token" in log_text.lower():
-        err_type = "Syntax Error"
-        cause = "Possible syntax typo or missing token (e.g. comma or bracket) in codebase."
-    elif "timeout" in log_text.lower():
-        err_type = "Connection Timeout"
-        cause = "Internal service or database connection timed out."
-    elif "at " in log_text.lower():
-        err_type = "Runtime Traceback"
-        cause = "Exception captured in runtime execution stack."
-
+    # Return structured error if AI service is offline or failed
     return {
-        "severity": "CRITICAL" if is_err else "INFO",
-        "error_type": err_type,
-        "root_cause": f"[OFFLINE] {cause}",
-        "impact": "Infrastructure monitoring active. Deep AI reasoning is pending Ollama recovery.",
-        "explanation": f"Automated analysis of: {log_text[:200]}...",
-        "fix_steps": [
-            "Check code for syntax typos",
-            "Verify database/API connectivity",
-            "Restart Ollama service (ollama serve)"
-        ],
-        "system_status": "DEGRADED" if is_err else "HEALTHY",
-        "risk_level": "80%" if is_err else "0%",
-        "severity_score": 90 if is_err else 5
+        "AI_ANALYSIS_UNAVAILABLE": True,
+        "message": "AI analysis service is currently unavailable.",
+        "severity_level": "INFO",
+        "severity_score": 0,
+        "explanation": "AI investigation system is offline. Automated analysis is currently restricted to pattern matching.",
+        "chart_type": "line"
     }

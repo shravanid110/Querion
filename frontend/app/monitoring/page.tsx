@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
+import { useSearchParams, useRouter } from "next/navigation";
 import axios from "axios";
 import {
     Activity,
@@ -36,6 +37,8 @@ interface Project {
     last_updated: string;
     file_count: number;
     log_count: number;
+    is_active?: boolean;
+    session_id?: string;
 }
 
 interface ChatMessage {
@@ -52,7 +55,7 @@ interface LogLine {
 
 // ─── API base ─────────────────────────────────────────────────────────────────
 
-const API = "http://localhost:4000";
+const API = "http://127.0.0.1:4000";
 const USER_ID = "default_user";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -355,6 +358,11 @@ function ProjectCard({
             <div className="flex items-center gap-1.5 text-slate-500 text-xs mb-4">
                 <Clock className="h-3 w-3" />
                 <span>Updated {timeAgo(project.last_updated)}</span>
+                {project.is_active && (
+                    <span className="ml-auto flex items-center gap-1 text-[8px] font-black text-emerald-400 animate-pulse bg-emerald-500/10 px-1.5 py-0.5 rounded-full border border-emerald-500/20">
+                        ● ACTIVE
+                    </span>
+                )}
             </div>
 
             <div className="flex gap-3">
@@ -411,6 +419,10 @@ function VoiceBadge({ lang, status }: { lang?: string; status: "idle" | "recordi
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function MonitoringPage() {
+    const searchParams = useSearchParams();
+    const router = useRouter();
+    const urlProjectId = searchParams.get("projectId");
+
     const [projects, setProjects] = useState<Project[]>([]);
     const [selectedProject, setSelectedProject] = useState<Project | null>(null);
     const [activeTab, setActiveTab] = useState<"chat" | "logs" | "files" | "dashboard">("chat");
@@ -447,6 +459,7 @@ export default function MonitoringPage() {
     const isRecordingRef = useRef(false);
 
     const logsEndRef = useRef<HTMLDivElement>(null);
+    const logContainerRef = useRef<HTMLDivElement>(null);
     const chatEndRef = useRef<HTMLDivElement>(null);
     const pollRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -454,38 +467,63 @@ export default function MonitoringPage() {
     const fetchProjects = useCallback(async () => {
         try {
             const res = await axios.get(`${API}/api/monitor/projects/${USER_ID}`, {
-                timeout: 8000,
+                timeout: 15000, // Increased timeout for remote DB
             });
-            setProjects(res.data);
+            const fetchedProjects = res.data as Project[];
+            setProjects(fetchedProjects);
             setBackendOnline(true);
             setProjectError(null);
+
+            // Auto-select project if ID is in URL and not already selected
+            if (urlProjectId && !selectedProject) {
+                const found = fetchedProjects.find(p => p.id === parseInt(urlProjectId));
+                if (found) setSelectedProject(found);
+            }
         } catch (e: any) {
             setBackendOnline(false);
-            setProjectError("Cannot reach backend at localhost:4000. Make sure Python backend is running.");
+            setProjectError(`Cannot reach backend at ${API}. Make sure Python backend is running and port 4000 is open.`);
         } finally {
             setLoadingProjects(false);
         }
-    }, []);
+    }, [urlProjectId, selectedProject]);
 
     useEffect(() => {
         fetchProjects();
-        const interval = setInterval(fetchProjects, 10000); // Poll every 10s
+        const interval = setInterval(fetchProjects, 3000); // Polling every 3s for faster detection
         return () => clearInterval(interval);
     }, [fetchProjects]);
 
     // ── Fetch logs for selected project ────────────────────────────────────────
     const fetchProjectDetail = useCallback(async (project: Project) => {
         try {
-            const [logsRes, filesRes] = await Promise.all([
-                axios.get(`${API}/api/monitor/logs/${project.id}`, { timeout: 3000 }),
-                axios.get(`${API}/api/monitor/files/${project.id}`, { timeout: 3000 }),
+            const [logsRes, filesRes, projectsRes] = await Promise.all([
+                axios.get(`${API}/api/monitor/logs/${project.id}`, { timeout: 8000 }),
+                axios.get(`${API}/api/monitor/files/${project.id}`, { timeout: 8000 }),
+                axios.get(`${API}/api/monitor/projects/${USER_ID}`, { timeout: 8000 })
             ]);
-            setLogs(logsRes.data || []);
+            
+            const latestProject = (projectsRes.data as Project[]).find(p => p.id === project.id);
+            if (latestProject) {
+                // Stabilized session change detection: 
+                // Only clear if the session ID has explicitly changed from a known ID to a new one
+                const hasSessionChanged = project.session_id && 
+                                        latestProject.session_id && 
+                                        project.session_id !== latestProject.session_id;
+                                        
+                if (hasSessionChanged) {
+                    setLogs([]);
+                } else if (latestProject.is_active) {
+                    setLogs(logsRes.data || []);
+                }
+                
+                setSelectedProject(latestProject);
+            }
+            
             setFiles(filesRes.data || []);
         } catch {
             // silently ignore
         }
-    }, []);
+    }, [selectedProject]);
 
     useEffect(() => {
         if (!selectedProject) return;
@@ -516,13 +554,29 @@ export default function MonitoringPage() {
     }, [selectedProject, selectedFile]);
 
     // ── Auto-scroll ─────────────────────────────────────────────────────────────
-    useEffect(() => {
-        logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, [logs]);
+    const scrollToBottom = (force = false) => {
+        const container = logContainerRef.current;
+        if (container) {
+            const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 200;
+            if (force || isNearBottom) {
+                container.scrollTo({ top: container.scrollHeight, behavior: force ? "smooth" : "auto" });
+            }
+        }
+    };
 
     useEffect(() => {
-        chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, [messages]);
+        if (activeTab === "logs" && logs.length > 0) {
+            scrollToBottom();
+        }
+    }, [logs, activeTab]);
+
+    useEffect(() => {
+        if (activeTab === "chat" && messages.length > 0) {
+            setTimeout(() => {
+                chatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+            }, 100);
+        }
+    }, [messages, activeTab]);
 
     const speakText = (text: string) => {
         if (!window.speechSynthesis) return;
@@ -716,6 +770,14 @@ export default function MonitoringPage() {
                     >
                         <RefreshCw className="h-4 w-4" />
                     </button>
+                    
+                    <Link
+                        href={`/monitoring/log-groups?projectId=${selectedProject?.id || ''}`}
+                        className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-400 hover:text-indigo-300 border border-indigo-500/30 rounded-lg text-xs font-bold transition-all"
+                    >
+                        <Layers className="h-3.5 w-3.5" />
+                        Log Groups
+                    </Link>
                 </div>
             </header>
 
@@ -788,7 +850,10 @@ export default function MonitoringPage() {
                                 <ProjectCard
                                     key={p.id}
                                     project={p}
-                                    onSelect={setSelectedProject}
+                                    onSelect={(selected) => {
+                                        setSelectedProject(selected);
+                                        router.push(`/monitoring?projectId=${selected.id}`);
+                                    }}
                                 />
                             ))}
                         </div>
@@ -806,6 +871,7 @@ export default function MonitoringPage() {
                                     setMessages([]);
                                     setLogs([]);
                                     setFiles([]);
+                                    router.push("/monitoring");
                                 }}
                                 className="flex items-center gap-2 text-slate-400 hover:text-slate-200 transition-colors text-xs"
                             >
@@ -1087,37 +1153,68 @@ export default function MonitoringPage() {
                         </div>
 
                         {/* ── Logs Tab ── */}
-                        <div className={activeTab === "logs" ? "flex-1 overflow-y-auto bg-slate-950 font-mono text-xs p-4 space-y-0.5" : "hidden"}>
-                            {logs.length === 0 ? (
-                                <div className="flex flex-col items-center justify-center h-full text-slate-700">
-                                    <Terminal className="h-10 w-10 mb-3" />
-                                    <p>No logs captured yet.</p>
-                                    <p className="mt-1 text-slate-800">
-                                        Run your app with: <span className="text-cyan-800">python app.py | querion watch --project "{selectedProject.name}"</span>
-                                    </p>
-                                </div>
-                            ) : (
-                                logs.map((l, i) => (
-                                    <div key={i} className="flex gap-3 py-0.5 hover:bg-slate-900/50 px-2 rounded">
-                                        <span className="text-slate-700 flex-shrink-0 select-none">
-                                            {fmtTime(l.timestamp)}
-                                        </span>
-                                        <span
-                                            className={
-                                                l.log_line.toLowerCase().includes("error") ||
-                                                    l.log_line.toLowerCase().includes("exception")
-                                                    ? "text-red-400"
-                                                    : l.log_line.toLowerCase().includes("warn")
-                                                        ? "text-yellow-400"
-                                                        : "text-slate-400"
-                                            }
-                                        >
-                                            {l.log_line}
-                                        </span>
+                        <div 
+                            ref={logContainerRef}
+                            className={activeTab === "logs" ? "flex-1 overflow-y-auto custom-scrollbar bg-slate-950 font-mono text-xs p-4 relative" : "hidden"}
+                        >
+                            {selectedProject && (
+                                <div className="flex items-center justify-between mb-6 bg-slate-900/40 p-3 rounded-xl border border-slate-800/60 sticky top-0 z-10 backdrop-blur-md">
+                                    <div className="flex items-center gap-3">
+                                        <div className={`w-2 h-2 rounded-full ${selectedProject.is_active ? 'bg-emerald-500 animate-pulse' : 'bg-slate-700'}`} />
+                                        <span className="text-[10px] font-black text-slate-400 tracking-widest uppercase">Live Session Stream</span>
                                     </div>
-                                ))
+                                    <div className="flex items-center gap-2">
+                                        <button 
+                                            onClick={() => scrollToBottom(true)}
+                                            className="flex items-center gap-1.5 text-[9px] font-black text-slate-500 hover:text-slate-300 uppercase tracking-widest bg-slate-900 px-3 py-1.5 rounded-full border border-slate-800 transition-all"
+                                        >
+                                            <Clock className="h-3 w-3" />
+                                            Latest
+                                        </button>
+                                        <Link 
+                                            href={`/monitoring/log-groups?projectId=${selectedProject.id}`}
+                                            className="flex items-center gap-2 text-[9px] font-black text-indigo-400 hover:text-indigo-300 uppercase tracking-widest bg-indigo-500/10 px-4 py-1.5 rounded-full border border-indigo-500/20 transition-all hover:bg-indigo-500/20"
+                                        >
+                                            <Layers className="h-3 w-3" />
+                                            Grouped
+                                            <ChevronRight className="h-3 w-3" />
+                                        </Link>
+                                    </div>
+                                </div>
                             )}
-                            <div ref={logsEndRef} />
+
+                            <div className="space-y-0.5">
+                                {logs.length === 0 ? (
+                                    <div className="flex flex-col items-center justify-center py-20 text-slate-700">
+                                        <Terminal className="h-10 w-10 mb-3 opacity-20" />
+                                        <p className="font-bold tracking-tight text-sm">Waiting for incoming logs...</p>
+                                        <p className="mt-2 text-[10px] text-slate-800 max-w-xs text-center leading-relaxed">
+                                            Logs from the current session will appear here in real-time. Previous session history has been cleared for focus.
+                                        </p>
+                                    </div>
+                                ) : (
+                                    logs.map((l, i) => (
+                                        <div key={i} className="flex gap-3 py-0.5 hover:bg-slate-900/50 px-2 rounded group transition-colors">
+                                            <span className="text-slate-700 flex-shrink-0 select-none font-bold w-16">
+                                                {fmtTime(l.timestamp)}
+                                            </span>
+                                            <span
+                                                className={
+                                                    l.log_line.toLowerCase().includes("error") ||
+                                                        l.log_line.toLowerCase().includes("exception")
+                                                        ? "text-red-400 font-medium"
+                                                        : l.log_line.toLowerCase().includes("warn")
+                                                            ? "text-yellow-400"
+                                                            : "text-slate-400"
+                                                }
+                                            >
+                                                {l.log_line}
+                                            </span>
+                                        </div>
+                                    ))
+                                )}
+                                <div ref={logsEndRef} />
+                            </div>
                         </div>
 
                         {/* ── Files Tab ── */}
