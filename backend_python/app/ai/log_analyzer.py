@@ -8,6 +8,33 @@ from typing import Dict, Any
 
 logger = logging.getLogger(__name__)
 
+async def run_ollama_fallback(prompt: str):
+    logger.info("Falling back to local Ollama (phi3:latest) for Log Analysis...")
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post("http://127.0.0.1:11434/api/generate", json={
+                "model": "phi3:latest",
+                "prompt": prompt,
+                "stream": False
+            }, timeout=45.0)
+            if resp.status_code == 200:
+                data = resp.json()
+                return data.get("response", "")
+    except Exception as e:
+        logger.error(f"Ollama fallback failed: {e}")
+    return ""
+
+def _parse_llm_json(result_text: str):
+    json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', result_text, re.DOTALL)
+    if json_match:
+        result_text = json_match.group(1).strip()
+    else:
+        json_start = result_text.find('{')
+        json_end = result_text.rfind('}')
+        if json_start != -1 and json_end != -1:
+            result_text = result_text[json_start:json_end+1]
+    return json.loads(result_text)
+
 async def analyze_log(log_text: str, file_context: str = None) -> dict:
     """
     Querion AI Observability Engine - Senior SRE Agent.
@@ -69,33 +96,6 @@ Return ONLY a raw JSON object with the following schema exactly (no markdown for
   "chart_type": "bar" | "line" | "pie" | "gauge"
 }}
 """
-
-async def run_ollama_fallback(prompt: str):
-    logger.info("Falling back to local Ollama (phi3:latest) for Log Analysis...")
-    try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.post("http://127.0.0.1:11434/api/generate", json={
-                "model": "phi3:latest",
-                "prompt": prompt,
-                "stream": False
-            }, timeout=45.0)
-            if resp.status_code == 200:
-                data = resp.json()
-                return data.get("response", "")
-    except Exception as e:
-        logger.error(f"Ollama fallback failed: {e}")
-    return ""
-
-def _parse_llm_json(result_text: str):
-    json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', result_text, re.DOTALL)
-    if json_match:
-        result_text = json_match.group(1).strip()
-    else:
-        json_start = result_text.find('{')
-        json_end = result_text.rfind('}')
-        if json_start != -1 and json_end != -1:
-            result_text = result_text[json_start:json_end+1]
-    return json.loads(result_text)
 
     try:
         async with httpx.AsyncClient() as client:
