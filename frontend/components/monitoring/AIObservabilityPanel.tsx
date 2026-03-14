@@ -661,6 +661,7 @@ function EChartRenderer({ type, severity, metrics, title }: {
         };
 
         if (chartType === 'gauge') {
+            const val = severity === 'CRITICAL' ? 15 : severity === 'ERROR' ? 35 : severity === 'WARNING' ? 65 : severity === 'MINOR' ? 80 : 98;
             baseOption.series = [{
                 type: 'gauge',
                 startAngle: 210, endAngle: -30, center: ['50%', '60%'], radius: '100%',
@@ -671,20 +672,31 @@ function EChartRenderer({ type, severity, metrics, title }: {
                     }
                 },
                 detail: { fontSize: 18, color: '#fff', formatter: '{value}%' },
-                data: [{ value: Math.floor(Math.random() * 40) + 60 }]
+                data: [{ value: val }]
             }];
-        } else if (chartType === 'pie') {
+        } else if (chartType.includes('pie') || chartType.includes('donut')) {
+            const errWeight = severity === 'CRITICAL' ? 85 : severity === 'ERROR' ? 65 : severity === 'WARNING' ? 40 : 15;
             baseOption.series = [{
-                type: 'pie', radius: ['40%', '70%'],
+                type: 'pie', radius: chartType.includes('donut') ? ['45%', '70%'] : '70%',
                 label: { show: false },
-                data: [{ value: 33, name: 'A' }, { value: 67, name: 'B' }]
+                data: [
+                    { value: errWeight, name: 'Anomaly', itemStyle: { color: activeColor } }, 
+                    { value: 100 - errWeight, name: 'Normal', itemStyle: { color: '#1e293b' } }
+                ]
             }];
         } else {
-            baseOption.xAxis = { type: 'category', data: ['T1', 'T2', 'T3', 'T4', 'T5'], show: false };
+            baseOption.xAxis = { type: 'category', data: ['T-5', 'T-4', 'T-3', 'T-2', 'T-1', 'Now'], show: false };
             baseOption.yAxis = { show: false };
+            
+            let sparkline = [0, 0, 0, 0, 0, 0];
+            if (severity === 'CRITICAL') sparkline = [5, 10, 40, 80, 100, 100];
+            else if (severity === 'ERROR') sparkline = [5, 10, 20, 50, 75, 80];
+            else if (severity === 'WARNING') sparkline = [10, 15, 30, 45, 60, 55];
+            else sparkline = [15, 20, 25, 15, 10, 5];
+
             baseOption.series = [{
                 type: 'line', smooth: true, areaStyle: { opacity: 0.2 },
-                data: Array.from({ length: 5 }, () => Math.random() * 100)
+                data: sparkline, itemStyle: { color: activeColor }
             }];
         }
 

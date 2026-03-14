@@ -2,6 +2,8 @@ import httpx
 import json
 import logging
 import re
+import os
+from dotenv import load_dotenv
 from typing import Dict, Any
 
 logger = logging.getLogger(__name__)
@@ -10,111 +12,130 @@ async def analyze_log(log_text: str, file_context: str = None) -> dict:
     """
     Querion AI Observability Engine - Senior SRE Agent.
     Performs deep analysis of grouped logs, correlates with source code, 
-    and generates root cause insights with fixes.
+    and generates root cause insights with fixes using Grok.
     """
-    
-    master_prompt = f"""You are the Querion AI Observability Engine.
-You are an autonomous Site Reliability Engineering (SRE) system responsible for understanding software logs, scanning project code, identifying failures, and generating root cause explanations with solutions.
+    load_dotenv()
+    grok_api_key = os.getenv("GROK_API_KEY")
 
-Analyze the following grouped log event and project file context deeply to produce observability insights.
+    if not grok_api_key:
+        return {
+            "AI_ANALYSIS_UNAVAILABLE": True,
+            "message": "xAI API Key not configured.",
+            "severity_level": "INFO",
+            "severity_score": 0,
+            "explanation": "Please configure your GROK_API_KEY environment variable to enable intelligent root cause analysis.",
+            "chart_type": "line"
+        }
 
-LOG EVENT:
+    master_prompt = f"""You are a senior debugging engineer.
+
+Analyze the following error log and provide:
+
+1. Error explanation
+2. Root cause
+3. Why the error occurred
+4. File location causing the issue
+5. Correct code if code is wrong
+6. Correct command if command failed
+7. Step-by-step debugging instructions
+8. Best practices to avoid the error
+9. Severity classification
+
+Error Log:
 {log_text}
 
-PROJECT FILE CONTEXT:
+Project File Context (if any):
 {file_context or "No source code available."}
 
-TASKS:
-1. Identify whether the log indicates: error, warning, or successful execution.
-2. If an error exists: find the affected file, detect the line number, analyze the code snippet, explain why the error occurred.
-3. Generate step-by-step instructions to fix the issue.
-4. Provide corrected code if applicable.
-5. Generate terminal commands if needed.
-6. Suggest the best chart to visualize this event in the monitoring dashboard (pie, bar, line, gauge, sankey).
-7. If no error exists: explain what the log indicates and why the system is working correctly.
+SEVERITY CLASSIFICATION RULES:
+- Critical: SyntaxError, ReferenceError, DatabaseConnectionError, Server crash
+- High: TypeError, RuntimeError
+- Medium: NetworkError, TimeoutError
+- Low: Warnings, Info
 
-DEBUGGING FRAMEWORK:
-- Error Identification (Syntax, Runtime, Logical, Dependency, Build, Command)
-- Error Message Analysis (File, Line, Column)
-- Code Context Analysis (Imports, Variables, Brackets, Syntax)
-- Root Cause Detection
-- Fix Generation
-- Prevention Advice
-- Debugging Flow Explanation
-
-SEVERITY CLASSIFICATION:
-- CRITICAL (Syntax errors, Build failures, Server crashes) -> Score 90-100
-- ERROR (Runtime failures, API errors, DB errors) -> Score 70-89
-- WARNING (Slow operations, Deprecated features) -> Score 40-69
-- INFO (Normal execution, Server start, Success) -> Score 0-39
-
-SYSTEM STATUS:
-- UNSTABLE: cannot run or render.
-- RISK: connectivity/degraded.
-- HEALTHY: normal operation.
-
-OUTPUT RULES:
-- Return ONLY JSON.
-- Never mention the name of the AI model.
-- Be deep, structured, and educational.
-
-REQUIRED JSON FORMAT:
+Return ONLY a raw JSON object with the following schema exactly (no markdown formatting or wrappers):
 {{
-  "severity_level": "CRITICAL",
-  "severity_score": 95,
-  "error_type": "...",
-  "system_status": "UNSTABLE",
-  "affected_file": "...",
-  "file_path": "...",
-  "line_number": "...",
-  "code_snippet": "...",
-  "root_cause": "...",
-  "explanation": "...",
-  "detailed_explanation": "...",
-  "impact": "...",
-  "fix_steps": ["Step 1...", "Step 2..."],
-  "generated_fix_code": "...",
-  "correct_code": "...",
-  "terminal_commands": ["..."],
-  "prevention_advice": ["..."],
-  "chart_type": "bar",
-  "dashboard_label": "..."
+  "severity_level": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW",
+  "error_type": "name of error",
+  "explanation": "detailed explanation of the error",
+  "root_cause": "why it occurred",
+  "affected_file": "file location",
+  "line_number": "line number if detected",
+  "incorrect_code": "the specific code causing the issue",
+  "correct_code": "the corrected code",
+  "terminal_commands": ["comma", "separated", "commands if any"],
+  "fix_steps": ["step 1", "step 2"],
+  "prevention_advice": ["best practices to avoid error"],
+  "chart_type": "bar" | "line" | "pie" | "gauge"
 }}
 """
 
+async def run_ollama_fallback(prompt: str):
+    logger.info("Falling back to local Ollama (phi3:latest) for Log Analysis...")
     try:
         async with httpx.AsyncClient() as client:
-            # Using phi3 as requested model in context
-            response = await client.post("http://127.0.0.1:11434/api/generate", json={
+            resp = await client.post("http://127.0.0.1:11434/api/generate", json={
                 "model": "phi3:latest",
-                "prompt": master_prompt,
+                "prompt": prompt,
                 "stream": False
             }, timeout=45.0)
+            if resp.status_code == 200:
+                data = resp.json()
+                return data.get("response", "")
+    except Exception as e:
+        logger.error(f"Ollama fallback failed: {e}")
+    return ""
+
+def _parse_llm_json(result_text: str):
+    json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', result_text, re.DOTALL)
+    if json_match:
+        result_text = json_match.group(1).strip()
+    else:
+        json_start = result_text.find('{')
+        json_end = result_text.rfind('}')
+        if json_start != -1 and json_end != -1:
+            result_text = result_text[json_start:json_end+1]
+    return json.loads(result_text)
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://api.x.ai/v1/chat/completions",
+                json={
+                    "model": "grok-beta",
+                    "messages": [{"role": "system", "content": master_prompt}],
+                    "temperature": 0.2
+                },
+                headers={
+                    "Authorization": f"Bearer {grok_api_key}",
+                    "Content-Type": "application/json"
+                },
+                timeout=15.0
+            )
             
+            result_text = ""
             if response.status_code == 200:
                 data = response.json()
-                result_text = data.get("response", "")
-                
-                # Attempt to extract JSON
-                json_match = re.search(r'```json(.*?)```', result_text, re.DOTALL)
-                if json_match:
-                    result_text = json_match.group(1).strip()
-                else:
-                    json_start = result_text.find('{')
-                    json_end = result_text.rfind('}')
-                    if json_start != -1 and json_end != -1:
-                        result_text = result_text[json_start:json_end+1]
-                
-                try:
-                    return json.loads(result_text)
-                except Exception as e:
-                    logger.error(f"AI_JSON_PARSE_FAILED: {e}")
+                result_text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
             else:
-                logger.error(f"AI_SERVICE_HTTP_ERROR: {response.status_code}")
+                logger.error(f"GROK_API_ERROR: {response.status_code} - {response.text}")
+                result_text = await run_ollama_fallback(master_prompt)
                 
+            if result_text:
+                try:
+                    return _parse_llm_json(result_text)
+                except Exception as e:
+                    logger.error(f"AI_JSON_PARSE_FAILED: {e}\nPayload: {result_text}")
+                    
     except Exception as e:
-        logger.error(f"AI_INVESTIGATION_SERVICE_UNREACHABLE: {e}")
-        
+        logger.error(f"GROK_SERVICE_UNREACHABLE: {e}")
+        result_text = await run_ollama_fallback(master_prompt)
+        if result_text:
+            try:
+                return _parse_llm_json(result_text)
+            except:
+                pass
+            
     # Return structured error if AI service is offline or failed
     return {
         "AI_ANALYSIS_UNAVAILABLE": True,

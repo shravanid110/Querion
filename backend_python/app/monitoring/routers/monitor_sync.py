@@ -131,7 +131,8 @@ async def process_sync_background(req: SyncRequest, project_id: int, is_restart:
             # 1. Sync Files
             if req.files:
                 for f in req.files:
-                    if any(x in f.file_path for x in ["package-lock.json", "yarn.lock", "node_modules", ".git"]):
+                    path_str = f.file_path.replace("\\", "/")
+                    if any(x in path_str for x in ["package-lock.json", "yarn.lock", "pnpm-lock.yaml", "/node_modules/", "/.git/", "/venv/", "/.venv/", "/dist/", "/build/", "/coverage/", "/__pycache__/", "/.next/"]):
                         continue
                     
                     existing_file = db.query(ProjectFile).filter(
@@ -170,17 +171,21 @@ async def process_sync_background(req: SyncRequest, project_id: int, is_restart:
                 STACK_INDICATORS = ["at ", "at JSX", "File:", "Plugin:", "Internal server error", "traceback", "line ", "│", "├──", "└──"]
 
                 def is_new_event(text):
-                    if TIMESTAMP_PAT.search(text): return True
+                    trimmed = text.strip()
+                    if TIMESTAMP_PAT.search(trimmed): return True
                     # Check for log level start (not inside a stack line)
-                    if LOG_LEVEL_PAT.search(text) and not text.strip().startswith("at "): return True
-                    if any(text.strip().startswith(kw) for kw in PROCESS_MARKERS): return True
+                    if LOG_LEVEL_PAT.search(trimmed) and not trimmed.startswith("at "): return True
+                    if any(trimmed.startswith(kw) for kw in PROCESS_MARKERS): return True
                     return False
 
                 def is_stack(text):
                     trimmed = text.strip()
+                    if not trimmed: return True
                     if text.startswith(" ") or text.startswith("\t"): return True
-                    if any(trimmed.startswith(kw) for kw in STACK_INDICATORS): return True
-                    if "^" in text: return True
+                    if any(kw in trimmed for kw in STACK_INDICATORS): return True
+                    if "^" in text or "~" in text: return True
+                    # Catch Vite/Babel code snippets like: "6 | const [state, setState]"
+                    if _re.match(r'^>?\s*\d+\s*\|', trimmed): return True
                     if _re.search(r'([A-Za-z]:\\[^: \n]+|/[^: \n]+)', text): return True
                     return False
 
@@ -198,12 +203,14 @@ async def process_sync_background(req: SyncRequest, project_id: int, is_restart:
                             log_blocks.append({"lines": state["lines"], "ts": state["ts"]})
                         state["lines"] = [line]
                         state["ts"] = l.timestamp or datetime.utcnow()
-                    elif is_stack(line):
+                    elif is_stack(line) or (state["lines"] and ("error" in state["lines"][0].lower() or "exception" in state["lines"][0].lower())):
+                        # If it looks like a stack trace OR we are currently collecting an error block,
+                        # blindly append to prevent fracturing a massive code snippet traceback.
                         if not state["lines"]: state["ts"] = l.timestamp or datetime.utcnow()
                         state["lines"].append(line)
                     else:
                         # Non-stack line: could be start of an info message without timestamp
-                        if state["lines"] and not is_stack(line):
+                        if state["lines"]:
                              log_blocks.append({"lines": state["lines"], "ts": state["ts"]})
                              state["lines"] = [line]
                              state["ts"] = l.timestamp or datetime.utcnow()
@@ -249,9 +256,9 @@ async def process_sync_background(req: SyncRequest, project_id: int, is_restart:
                     # Rule 6: Detect SEVERITY
                     severity = "INFO"
                     full_lower = full_block.lower()
-                    if any(kw in full_lower for kw in ["fatal", "crash", "critical", "system failure"]):
+                    if any(kw in full_lower for kw in ["fatal", "crash", "critical", "system failure", "internal server error"]):
                         severity = "CRITICAL"
-                    elif any(kw in full_lower for kw in ["exception", "failed", "unexpected", "syntax error", "module not found", "error"]):
+                    elif any(kw in full_lower for kw in ["exception", "failed", "unexpected", "syntax error", "module not found", "error", "traceback", "\nat ", "plugin: vite", "^"]):
                         severity = "ERROR"
                     elif "warn" in full_lower or "deprecated" in full_lower or "retry" in full_lower:
                         severity = "WARNING"
@@ -442,7 +449,15 @@ async def get_project_files(project_id: int, db: Session = Depends(get_monitor_d
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     files = db.query(ProjectFile.file_path).filter(ProjectFile.project_id == project_id).all()
-    return [{"file_path": f.file_path} for f in files]
+    
+    skip_patterns = ["node_modules", "__pycache__", ".git", ".venv", "venv", "dist", "build", "coverage", ".next"]
+    filtered_files = []
+    for f in files:
+        if any(x in f.file_path.replace("\\", "/") for x in [f"/{p}/" for p in skip_patterns] + [f"/{p}" for p in skip_patterns] + [f"{p}/" for p in skip_patterns]):
+            continue
+        filtered_files.append({"file_path": f.file_path})
+        
+    return filtered_files
 
 
 @router.get("/file-content/{project_id}")

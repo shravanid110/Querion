@@ -52,17 +52,20 @@ class QueryHistory(Base):
     metrics = Column(Text) # JSON string
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
+from sqlalchemy.pool import NullPool
+
 engine_args = {"pool_pre_ping": True}
 
 # Handle connection arguments for different DB types
 if "sqlite" in settings.DATABASE_URL:
     engine_args["connect_args"] = {"check_same_thread": False}
+    engine_args["poolclass"] = NullPool
 else:
     # Aggressive timeout for PostgreSQL/others to prevent startup hang
     engine_args["connect_args"] = {"connect_timeout": 5}
-    engine_args["pool_size"] = 20
-    engine_args["max_overflow"] = 30
-    engine_args["pool_timeout"] = 30
+    engine_args["pool_size"] = 50
+    engine_args["max_overflow"] = 100
+    engine_args["pool_timeout"] = 60
 
 engine = create_engine(settings.DATABASE_URL, **engine_args)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

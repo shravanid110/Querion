@@ -87,19 +87,19 @@ const EChart = ({ option, style, className }: { option: any, style?: React.CSSPr
 export default function DashboardTab({ project, logs }: DashboardProps) {
     const [searchTerm, setSearchTerm] = useState("");
     const [metrics, setMetrics] = useState<MetricState>({
-        cpu: Array(40).fill(0).map(() => Math.floor(Math.random() * 40) + 20),
-        ram: Array(40).fill(0).map(() => Math.floor(Math.random() * 30) + 40),
-        disk: 65,
-        uptime: "2d 14h 22m",
-        rps: Array(40).fill(0).map(() => Math.floor(Math.random() * 50) + 10),
-        latency: Array(40).fill(0).map(() => Math.floor(Math.random() * 200) + 50),
-        statusCodes: { "200": 850, "400": 45, "404": 12, "500": 8 },
-        dbConnections: 42,
-        dbQueryTime: Array(20).fill(0).map(() => Math.floor(Math.random() * 100) + 10),
+        cpu: Array(40).fill(0),
+        ram: Array(40).fill(0),
+        disk: 0,
+        uptime: "Active",
+        rps: Array(40).fill(0),
+        latency: Array(40).fill(0),
+        statusCodes: { "200": 0, "400": 0, "404": 0, "500": 0 },
+        dbConnections: 0,
+        dbQueryTime: Array(20).fill(0),
         errors: [],
         securityEvents: [],
-        activeUsers: 156,
-        userActivity: Array(20).fill(0).map(() => Math.floor(Math.random() * 100) + 50),
+        activeUsers: 0,
+        userActivity: Array(20).fill(0),
     });
 
     const [systemState, setSystemState] = useState<'normal' | 'warning' | 'critical'>('normal');
@@ -111,22 +111,64 @@ export default function DashboardTab({ project, logs }: DashboardProps) {
     useEffect(() => {
         if (!logs || logs.length === 0) return;
 
+        // Group multiline logs first to avoid counting one stack trace as multiple errors
+        const groupedLogs: string[] = [];
+        let currentBlock: string[] = [];
+        
+        const isNewEvent = (text: string) => {
+            const trimmed = text.trim();
+            if (trimmed === '') return false;
+            // Common log starters: Timestamp, Level (INFO, ERROR), or Process Markers (VITE, Ready)
+            if (/^(\d{4}[-/]\d{2}[-/]\d{2})|(\d{2}:\d{2}:\d{2})|(\d{1,2}:\d{2}\s?(?:AM|PM))/.test(trimmed)) return true;
+            if (/^(INFO|DEBUG|WARN|WARNING|ERROR|CRITICAL|FATAL)\b/i.test(trimmed)) return true;
+            if (/^(VITE|Webpack|React|Node\.js|Server started|Ready|Compiled|Listening|INFO:)/.test(trimmed)) return true;
+            return false;
+        };
+
+        const isStack = (text: string) => {
+            const trimmed = text.trim();
+            if (trimmed === '') return true;
+            if (text.startsWith(" ") || text.startsWith("\t")) return true;
+            if (["at ", "traceback", "File ", "│", "├──", "└──", "Plugin:"].some(kw => trimmed.includes(kw))) return true;
+            if (trimmed.includes("^") || trimmed.includes("~")) return true;
+            if (/^\d+\s*\|/.test(trimmed)) return true;
+            if (/([A-Za-z]:\\[^: \n]+|\/[^: \n]+)/.test(text)) return true;
+            return false;
+        };
+
+        logs.forEach(l => {
+            const line = l.log_line;
+            if (isNewEvent(line)) {
+                if (currentBlock.length > 0) groupedLogs.push(currentBlock.join('\n'));
+                currentBlock = [line];
+            } else if (isStack(line) || (currentBlock.length > 0 && currentBlock[0].toLowerCase().includes("error"))) {
+                currentBlock.push(line);
+            } else {
+                if (currentBlock.length > 0) groupedLogs.push(currentBlock.join('\n'));
+                currentBlock = [line];
+            }
+        });
+        if (currentBlock.length > 0) groupedLogs.push(currentBlock.join('\n'));
+
+        // Parse grouped logs for dashboard chart metrics
         const counts = { "200": 0, "400": 0, "404": 0, "500": 0 };
         const errList: any[] = [];
         const secList: any[] = [];
 
-        logs.forEach(l => {
-            const line = l.log_line.toLowerCase();
-            if (line.includes(' 200 ') || line.includes('get /') || line.includes('post /')) counts["200"]++;
-            else if (line.includes(' 404 ')) counts["404"]++;
-            else if (line.includes(' 400 ')) counts["400"]++;
-            else if (line.includes(' 500 ') || line.includes('error') || line.includes('exception')) {
+        groupedLogs.forEach((block) => {
+            const lowerBlock = block.toLowerCase();
+            
+            // Only count once per group
+            if (lowerBlock.includes(' 200 ') || lowerBlock.includes('get /') || lowerBlock.includes('post /')) counts["200"]++;
+            else if (lowerBlock.includes(' 404 ')) counts["404"]++;
+            else if (lowerBlock.includes(' 400 ')) counts["400"]++;
+            else if (lowerBlock.includes(' 500 ') || lowerBlock.includes('error') || lowerBlock.includes('exception') || lowerBlock.includes('traceback')) {
                 counts["500"]++;
-                errList.push({ msg: l.log_line, ts: l.timestamp });
+                errList.push({ msg: block, ts: new Date().toISOString() });
             }
 
-            if (line.includes('login fail') || line.includes('unauthorized') || line.includes('forbidden')) {
-                secList.push({ msg: l.log_line, ts: l.timestamp });
+            if (lowerBlock.includes('login fail') || lowerBlock.includes('unauthorized') || lowerBlock.includes('forbidden')) {
+                secList.push({ msg: block, ts: new Date().toISOString() });
             }
         });
 
@@ -137,7 +179,7 @@ export default function DashboardTab({ project, logs }: DashboardProps) {
             securityEvents: secList.slice(-10)
         }));
 
-        // Health detection from logs
+        // Health detection from grouped logs calculation
         if (errList.length > 3 || counts["500"] > 2) setSystemState('critical');
         else if (errList.length > 0 || counts["404"] > 10) setSystemState('warning');
         else setSystemState('normal');

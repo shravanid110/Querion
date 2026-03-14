@@ -36,16 +36,20 @@ class ProjectLog(Base):
     
     project = relationship("UserProject", back_populates="logs")
 
+from sqlalchemy.pool import NullPool
+
 # Separate DB for monitoring as requested
 MONITOR_DB_URL = "sqlite:///./querion_monitor.db"
 monitor_engine_args = {
     "connect_args": {"check_same_thread": False},
-    "pool_pre_ping": True
+    "pool_pre_ping": True,
+    "poolclass": NullPool
 }
 
 if "sqlite" not in MONITOR_DB_URL:
-    monitor_engine_args["pool_size"] = 20
-    monitor_engine_args["max_overflow"] = 30
+    monitor_engine_args.pop("poolclass", None)
+    monitor_engine_args["pool_size"] = 50
+    monitor_engine_args["max_overflow"] = 100
 
 monitor_engine = create_engine(MONITOR_DB_URL, **monitor_engine_args)
 MonitorSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=monitor_engine)

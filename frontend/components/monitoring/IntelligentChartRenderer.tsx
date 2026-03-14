@@ -38,6 +38,7 @@ interface MappedChart {
         suggested_fix: string;
     };
     value?: number | string;
+    history?: number[];
 }
 
 // 60+ Backend Scenarios Mapping
@@ -140,13 +141,22 @@ export default function IntelligentChartRenderer() {
                             // Match by title or ID (fuzzy match for now)
                             if (s.title.toLowerCase().includes(mapping.title.toLowerCase()) ||
                                 mapping.title.toLowerCase().includes(s.title.toLowerCase())) {
+                                
+                                const newValue = typeof data.count === 'number' ? data.count : 1;
+                                const currentHistory = s.history || Array(15).fill(0);
+                                const newHistory = [...currentHistory];
+                                newHistory.shift();
+                                newHistory.push(newValue);
+                                
                                 return {
                                     ...s,
                                     severity: mapping.severity,
                                     color: mapping.recommended_color,
                                     last_update: new Date().toISOString(),
                                     ai_insight: ai,
-                                    description: mapping.description
+                                    description: mapping.description,
+                                    value: newValue,
+                                    history: newHistory
                                 };
                             }
                             return s;
@@ -294,28 +304,28 @@ function LogChartItem({ chart }: { chart: MappedChart }) {
                 type: 'line',
                 smooth: chartType.includes('timeline') ? false : true,
                 step: chartType.includes('timeline') ? 'start' : undefined,
-                data: Array(15).fill(0).map(() => Math.random() * 50 + (chart.severity === 'CRITICAL' ? 50 : 0)),
+                data: chart.history || Array(15).fill(0).map(() => Math.random() * 10),
                 lineStyle: { color, width: 2 },
                 areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color }, { offset: 1, color: 'transparent' }]), opacity: 0.1 },
                 symbol: chartType.includes('timeline') ? 'circle' : 'none',
                 symbolSize: 4
             }];
         } else if (chartType.includes('pie') || chartType.includes('donut')) {
+            const count = (typeof chart.value === 'number') ? chart.value : 1;
             option.series = [{
                 type: 'pie',
                 radius: chartType.includes('donut') ? ['55%', '85%'] : '80%',
                 itemStyle: { borderRadius: 4 },
                 label: { show: false },
                 data: [
-                    { value: 40, itemStyle: { color } },
-                    { value: 30, itemStyle: { color: '#6366f1' } },
-                    { value: 20, itemStyle: { color: '#0ea5e9' } }
+                    { value: count, itemStyle: { color } },
+                    { value: Math.max(0, 10 - count), itemStyle: { color: '#6366f1' } }
                 ]
             }];
         } else if (chartType.includes('bar')) {
             option.series = [{
                 type: 'bar',
-                data: [120, 200, 150, 80, 70, 110].map(v => v * Math.random()),
+                data: (chart.history || Array(6).fill(0)).slice(-6),
                 itemStyle: { color, borderRadius: [2, 2, 0, 0] },
                 barWidth: '40%'
             }];

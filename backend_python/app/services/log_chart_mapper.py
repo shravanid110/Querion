@@ -12,6 +12,11 @@ class SeverityDetector:
     @staticmethod
     def detect(log: Dict[str, Any]) -> str:
         level = (log.get("level") or log.get("type") or "INFO").upper()
+        
+        # Obey directly injected explicit severity levels!
+        if level in ["CRITICAL", "ERROR"]:
+            return level
+
         status_code = log.get("status_code")
         message = (log.get("message") or log.get("data") or "").lower()
         count = log.get("count", 1)
