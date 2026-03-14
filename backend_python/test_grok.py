@@ -2,7 +2,7 @@ import os
 import requests
 import json
 
-api_key = "GROK_API_KEY_REMOVED"
+api_key = os.getenv("GROK_API_KEY", "")  # Load from environment variable
 
 url = "https://api.x.ai/v1/chat/completions"
 
