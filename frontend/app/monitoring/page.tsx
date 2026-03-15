@@ -607,6 +607,8 @@ export default function MonitoringPage() {
                     user_id: USER_ID,
                     project_name: selectedProject.name,
                     message: text,
+                    focused_file_path: selectedFile || undefined,
+                    focused_file_content: selectedFileContent || undefined
                 },
                 { timeout: 60000 }
             );

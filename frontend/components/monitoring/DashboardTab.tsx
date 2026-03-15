@@ -26,7 +26,6 @@ import {
     Layers
 } from 'lucide-react';
 import { cn } from '@/utils/cn';
-import IntelligentChartRenderer from './IntelligentChartRenderer';
 import AIObservabilityPanel from './AIObservabilityPanel';
 
 // --- Types ---
@@ -687,8 +686,6 @@ export default function DashboardTab({ project, logs }: DashboardProps) {
 
                 </div>
 
-                {/* --- New Intelligent Log-to-Chart Analytics Section --- */}
-                <IntelligentChartRenderer />
 
                 {/* --- AI Observability Intelligence Panel (4-Agent System) --- */}
                 <AIObservabilityPanel />

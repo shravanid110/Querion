@@ -3,6 +3,8 @@ import asyncio
 import httpx
 import re as _re
 import json
+import os
+from dotenv import load_dotenv
 from datetime import datetime
 from typing import List, Optional
 from pydantic import BaseModel
@@ -60,6 +62,8 @@ class ChatRequest(BaseModel):
     user_id: str
     project_name: str
     message: str
+    focused_file_path: Optional[str] = None
+    focused_file_content: Optional[str] = None
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
@@ -168,13 +172,15 @@ async def process_sync_background(req: SyncRequest, project_id: int, is_restart:
                 TIMESTAMP_PAT = _re.compile(r'(\d{4}[-/]\d{2}[-/]\d{2})|(\d{2}:\d{2}:\d{2})|(\d{1,2}:\d{2}\s?(?:AM|PM))')
                 LOG_LEVEL_PAT = _re.compile(r'\b(INFO|DEBUG|WARN|WARNING|ERROR|CRITICAL|FATAL|EXCEPTION|TRACEBACK)\b', _re.I)
                 PROCESS_MARKERS = ["VITE", "Webpack", "React", "Node.js", "Server started", "Ready in", "Compiled", "Listening", "Starting", "npm error", "yarn "]
-                STACK_INDICATORS = ["at ", "at JSX", "File:", "Plugin:", "Internal server error", "traceback", "line ", "│", "├──", "└──"]
+                STACK_INDICATORS = ["at ", "at JSX", "File:", "Plugin:", "Internal server error", "traceback", "line ", "│", "├──", "└──", "node_modules"]
 
                 def is_new_event(text):
                     trimmed = text.strip()
                     if TIMESTAMP_PAT.search(trimmed): return True
+                    # Case 1: File path error line starting a group (e.g. C:\...\App.jsx: Unexpected token)
+                    if _re.search(r'([A-Za-z]:\\[^: \n]+|/[^: \n]+)\.(js|jsx|ts|tsx):', text, _re.I): return True
                     # Check for log level start (not inside a stack line)
-                    if LOG_LEVEL_PAT.search(trimmed) and not trimmed.startswith("at "): return True
+                    if LOG_LEVEL_PAT.search(trimmed) and not (trimmed.startswith("at ") or "node_modules" in trimmed): return True
                     if any(trimmed.startswith(kw) for kw in PROCESS_MARKERS): return True
                     return False
 
@@ -182,10 +188,9 @@ async def process_sync_background(req: SyncRequest, project_id: int, is_restart:
                     trimmed = text.strip()
                     if not trimmed: return True
                     if text.startswith(" ") or text.startswith("\t"): return True
+                    # Detection for code frames (e.g. "  6 | const state") or caret markers
+                    if _re.match(r'^>?\s*\d+\s*\|', trimmed) or "^" in text or "~" in text: return True
                     if any(kw in trimmed for kw in STACK_INDICATORS): return True
-                    if "^" in text or "~" in text: return True
-                    # Catch Vite/Babel code snippets like: "6 | const [state, setState]"
-                    if _re.match(r'^>?\s*\d+\s*\|', trimmed): return True
                     if _re.search(r'([A-Za-z]:\\[^: \n]+|/[^: \n]+)', text): return True
                     return False
 
@@ -498,17 +503,11 @@ async def get_log_groups(project_id: int, limit: int = 1000, db: Session = Depen
     STACK_INDICATORS = ["at ", "at JSX", "File:", "Plugin:", "Internal server error", "traceback", "line ", "│", "├──", "└──"]
 
     def is_new_event(text):
+        # 1. New Group Starts ONLY on timestamp or clear Vite Error Markers
         if TIMESTAMP_PAT.search(text): return True
-        if LOG_LEVEL_PAT.search(text) and not text.strip().startswith("at "): return True
-        if any(text.strip().startswith(kw) for kw in PROCESS_MARKERS): return True
-        return False
-
-    def is_stack(text):
-        trimmed = text.strip()
-        if text.startswith(" ") or text.startswith("\t"): return True
-        if any(trimmed.startswith(kw) for kw in STACK_INDICATORS): return True
-        if "^" in text: return True
-        if _re.search(r'([A-Za-z]:\\[^: \n]+|/[^: \n]+)', text): return True
+        lower = text.lower()
+        if "[vite] internal server error" in lower or "error:" in lower:
+            return True
         return False
 
     # 1. Reconstruct Blocks from stored lines
@@ -522,13 +521,10 @@ async def get_log_groups(project_id: int, limit: int = 1000, db: Session = Depen
             if current_lines: blocks.append({"lines": current_lines, "ts": current_ts})
             current_lines = [line]
             current_ts = l.timestamp
-        elif is_stack(line):
+        else:
+            # Continuation: Keep grouping until the next is_new_event (timestamp/error start)
             if not current_lines: current_ts = l.timestamp
             current_lines.append(line)
-        else:
-            if current_lines: blocks.append({"lines": current_lines, "ts": current_ts})
-            current_lines = [line]
-            current_ts = l.timestamp
             
     if current_lines:
         blocks.append({"lines": current_lines, "ts": current_ts})
@@ -613,14 +609,20 @@ async def chat_with_agent(req: ChatRequest, db: Session = Depends(get_monitor_db
     
     # ── 3. Build code snippets (context budget) ───────────────────────────────
     file_parts = []
-    CHAR_BUDGET = 12000 # Reduced for better compatibility with free models
+    CHAR_BUDGET = 15000 
     used = 0
     
-    for f in analysis_files[:45]: # Increased to top 45 files
+    # Priority 0: The file the user is currently looking at
+    if req.focused_file_path and req.focused_file_content:
+        snippet = req.focused_file_content[:5000]
+        file_parts.append(f"### CURRENTLY VIEWED FILE: {req.focused_file_path}\n(This is the code currently open on the user's screen)\n```\n{snippet}\n```")
+        used += len(snippet)
+
+    for f in analysis_files[:45]:
         if used >= CHAR_BUDGET: break
+        if req.focused_file_path and f.file_path == req.focused_file_path: continue # Skip if already added
         content = (f.content or "").strip()
         lines = content.split("\n")
-        # Take up to 100 lines per file
         snippet = "\n".join(lines[:100])[:1800]
         file_parts.append(f"### FILE: {f.file_path}\n```\n{snippet}\n```")
         used += len(snippet)
@@ -628,21 +630,55 @@ async def chat_with_agent(req: ChatRequest, db: Session = Depends(get_monitor_db
     file_snippets_context = "\n\n".join(file_parts) or "No code context available."
 
     # ── 4. Build system prompt ────────────────────────────────────────────────
+    focused_hint = f"\nUSER IS CURRENTLY VIEWING: {req.focused_file_path}\nAnalyze this file specifically if relevant to the query." if req.focused_file_path else ""
+    
     system_prompt = (
         f"You are Querion AI, a senior expert developer and architect.\n"
-        f"Project: '{req.project_name}'\n\n"
+        f"Project: '{req.project_name}'\n{focused_hint}\n\n"
         "URGENT TASKS:\n"
-        "1. EXPLAIN FLOW: Use the PROJECT TREE to explain how the app works (backend, frontend, routing).\n"
-        "2. LOG ANALYSIS: Look at the RECENT LOGS. Find exact errors (e.g., 'Port in use', '404', 'TypeError').\n"
-        "3. LINE-BY-LINE FIX: Reference the exact file and line number from the CODE snippets. Provide the fix.\n"
+        "1. EXPLAIN FLOW: Use the PROJECT TREE to explain how the app works.\n"
+        "2. LOG ANALYSIS: Look at the RECENT LOGS. Find exact errors and correlate them with the code.\n"
+        "3. LINE-BY-LINE FIX: Reference EXACT file paths and line numbers. Provide corrected code blocks.\n"
         "4. COMMANDS: Tell the user exactly what to run in the terminal.\n\n"
-        f"### PROJECT TREE (Structure)\n{file_tree}\n\n"
-        f"### CODE SNIPPETS (Detailed)\n{file_snippets_context}\n\n"
-        f"### RECENT LOGS (Live)\n```\n{log_context}\n```\n"
+        f"### PROJECT TREE\n{file_tree}\n\n"
+        f"### CODE SNIPPETS (Context)\n{file_snippets_context}\n\n"
+        f"### RECENT LOGS\n```\n{log_context}\n```\n"
     )
 
-    # ── 5. Call LLM with Robust Fallbacks ─────────────────────────────────────
-    api_key = settings.OPENROUTER_API_KEY or settings.LLM_API_KEY
+    # ── 5. Call LLM with Robust Fallbacks (Prioritize Grok) ───────────────────
+    load_dotenv()
+    grok_key = settings.GROK_API_KEY or os.getenv("GROK_API_KEY")
+    openrouter_key = settings.OPENROUTER_API_KEY or settings.LLM_API_KEY
+    
+    # Try Grok first as it's the requested premium engine
+    if grok_key:
+        try:
+            logger.info("🤖 Calling Grok API for Chat...")
+            async with httpx.AsyncClient(timeout=45.0) as client:
+                resp = await client.post(
+                    "https://api.x.ai/v1/chat/completions",
+                    json={
+                        "model": "grok-beta",
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": req.message}
+                        ],
+                        "temperature": 0.2
+                    },
+                    headers={
+                        "Authorization": f"Bearer {grok_key}",
+                        "Content-Type": "application/json"
+                    }
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                    if content: return {"response": content.strip()}
+        except Exception as e:
+            logger.error(f"Grok chat failed: {e}")
+
+    # Fallback to OpenRouter
+    api_key = openrouter_key
     if not api_key:
         logger.error("❌ No API Key found (OPENROUTER_API_KEY or LLM_API_KEY)")
     else:

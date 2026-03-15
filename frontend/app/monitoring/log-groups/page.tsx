@@ -151,6 +151,57 @@ export default function LogGroupsPage() {
         g.representative_line.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
+    // --- UI-Level Visual Grouping ---
+    // Merge stack trace lines into previous error blocks during display
+    const displayGroups = React.useMemo(() => {
+        const merged: LogGroup[] = [];
+        let lastErrorGroup: LogGroup | null = null;
+
+        filteredGroups.forEach(g => {
+            const line = g.representative_line.trim();
+            
+            // Check for continuation patterns (Regex for code frames and pointers)
+            const isCodeFrame = /^\d+\s*\|/.test(line);
+            const isPointer = /^(\||\s*\^)/.test(line);
+            const isStackTrace = line.startsWith("at ");
+            const isContinuation = 
+                isStackTrace || 
+                isCodeFrame || 
+                isPointer || 
+                line.includes("node_modules") || 
+                line.includes("async") || 
+                line.includes("@babel") || 
+                line.includes("gensync");
+
+            // Check for explicit error start markers
+            const startsError = 
+                g.severity === 'ERROR' || 
+                g.severity === 'CRITICAL' || 
+                g.representative_line.includes("[vite] Internal server error") ||
+                g.representative_line.toLowerCase().includes("error:");
+
+            if (isContinuation && lastErrorGroup) {
+                // Merge this group into the previous error/critical group
+                lastErrorGroup.representative_line += "\n" + g.representative_line;
+                lastErrorGroup.count += g.count;
+                if (new Date(g.last_timestamp) > new Date(lastErrorGroup.last_timestamp)) {
+                    lastErrorGroup.last_timestamp = g.last_timestamp;
+                }
+            } else {
+                const newGroup = { ...g };
+                merged.push(newGroup);
+                
+                // Track current group if it's an error start
+                if (startsError) {
+                    lastErrorGroup = newGroup;
+                } else {
+                    lastErrorGroup = null;
+                }
+            }
+        });
+        return merged;
+    }, [filteredGroups]);
+
     return (
         <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-indigo-500/30">
             {/* Background Glows */}
@@ -268,7 +319,7 @@ export default function LogGroupsPage() {
                     ) : (
                         <div className="grid gap-3">
                             <AnimatePresence mode="popLayout">
-                                {filteredGroups.map((group, idx) => (
+                                {displayGroups.map((group, idx) => (
                                     <motion.div 
                                         layout
                                         initial={{ opacity: 0, scale: 0.95 }}
