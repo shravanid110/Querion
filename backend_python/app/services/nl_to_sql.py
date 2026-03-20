@@ -44,10 +44,18 @@ NOTE: Put the command/query string in the "sql" field.
 """
 
 async def convert_nl_to_sql(schema_context: str, user_prompt: str, db_type: str = "SQL", custom_model: Optional[str] = None) -> Dict[str, Any]:
-    api_key = settings.LLM_API_KEY
     base_url = settings.LLM_BASE_URL or 'https://openrouter.ai/api/v1'
+    
+    # Select appropriate key based on endpoint
+    if "api.x.ai" in base_url and settings.GROK_API_KEY:
+        api_key = settings.GROK_API_KEY
+    else:
+        api_key = settings.LLM_API_KEY or settings.OPENROUTER_API_KEY
 
-    if not api_key or api_key in ['sk-...', 'your_openai_api_key']:
+    print(f"[SQL Gen] Using Base URL: {base_url}")
+    print(f"[SQL Gen] API Key extracted: {api_key[:5]}... (Length: {len(api_key) if api_key else 0})")
+
+    if not api_key or len(api_key) < 10:
         return {
             "sql": None,
             "explanation": "LLM API Key is missing or invalid. Please configure a valid API key to generate queries."
@@ -59,7 +67,14 @@ async def convert_nl_to_sql(schema_context: str, user_prompt: str, db_type: str 
             "explanation": schema_context or "Could not retrieve database schema. Please check your connection and try again."
         }
 
-    models = [custom_model] if custom_model else [
+    models = []
+    if custom_model:
+        models.append(custom_model)
+    
+    if "api.x.ai" in base_url:
+        models.extend(["grok-beta", "grok-2-1212", "grok-2"])
+    
+    models.extend([
         "google/gemini-2.0-flash-001",
         "google/gemini-2.0-flash-lite-preview-02-05",
         "meta-llama/llama-3.3-70b-instruct",
@@ -67,7 +82,7 @@ async def convert_nl_to_sql(schema_context: str, user_prompt: str, db_type: str 
         "google/gemini-flash-1.5-8b:free",
         "meta-llama/llama-3.1-8b-instruct:free",
         "openrouter/auto"
-    ]
+    ])
 
     print(f"[SQL Gen] Prompt: \"{user_prompt}\"")
     
@@ -187,12 +202,16 @@ Rows Returned: {total_rows}
 CHART_TYPE: [type]
 """
 
+    model = "google/gemini-2.0-flash-001"
+    if "api.x.ai" in base_url:
+        model = "grok-beta"
+
     async with httpx.AsyncClient() as client:
         try:
             response = await client.post(
                 f"{base_url}/chat/completions",
                 json={
-                    "model": "google/gemini-2.0-flash-001",
+                    "model": model,
                     "messages": [
                         {"role": "system", "content": "You are a helpful expert data analyst. Be concise but insightful."},
                         {"role": "user", "content": analysis_prompt}

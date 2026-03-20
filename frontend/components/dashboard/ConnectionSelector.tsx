@@ -18,6 +18,7 @@ interface Connection {
 
 interface ConnectionSelectorProps {
     onSelect: (connection: any) => void;
+    selectedId?: string | null;
 }
 
 // ─── Master Password Modal ────────────────────────────────────────────────────
@@ -174,12 +175,14 @@ function MasterPasswordModal({
 }
 
 // ─── Connection Selector ──────────────────────────────────────────────────────
-export const ConnectionSelector = ({ onSelect }: ConnectionSelectorProps) => {
+export const ConnectionSelector = (props: ConnectionSelectorProps) => {
+    const { onSelect } = props;
     const [isOpen, setIsOpen] = useState(false);
     const [connections, setConnections] = useState<Connection[]>([]);
     const [selected, setSelected] = useState<Connection | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [pendingConn, setPendingConn] = useState<Connection | null>(null); // waiting for password
+    const { selectedId } = props;
     const router = useRouter();
 
     useEffect(() => {
@@ -187,7 +190,15 @@ export const ConnectionSelector = ({ onSelect }: ConnectionSelectorProps) => {
             try {
                 const data = await getConnections();
                 setConnections(data);
-                // Do NOT auto-select — user must verify password first
+                
+                // If we have a selectedId from props, set it as active if found
+                if (selectedId) {
+                    const found = data.find((c: Connection) => c.id === selectedId);
+                    if (found) {
+                        setSelected(found);
+                        onSelect(found);
+                    }
+                }
             } catch (error) {
                 console.error("Failed to load connections", error);
             } finally {
@@ -195,7 +206,7 @@ export const ConnectionSelector = ({ onSelect }: ConnectionSelectorProps) => {
             }
         };
         fetchConnections();
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [selectedId]); // Re-fetch or re-sync when selectedId changes
 
     // When user clicks a connection — show the password modal
     const handleConnectionClick = (conn: Connection) => {

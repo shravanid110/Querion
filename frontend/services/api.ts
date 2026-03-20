@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { supabase } from '@/lib/supabaseClient';
 
 const API_Base = process.env.NEXT_PUBLIC_API_URL ? `${process.env.NEXT_PUBLIC_API_URL}/api` : 'http://127.0.0.1:4000/api';
 
@@ -7,6 +8,27 @@ export const api = axios.create({
     headers: {
         'Content-Type': 'application/json',
     },
+});
+
+// Add a request interceptor to include the auth token
+api.interceptors.request.use(async (config) => {
+    try {
+        // Prevent interceptor from hanging forever
+        const authData = await Promise.race([
+            supabase.auth.getSession(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Auth timeout')), 2000))
+        ]) as any;
+
+        const session = authData?.data?.session;
+        if (session?.access_token) {
+            config.headers.Authorization = `Bearer ${session.access_token}`;
+        }
+    } catch (err) {
+        console.warn('Auth interceptor timeout or error:', err);
+    }
+    return config;
+}, (error) => {
+    return Promise.reject(error);
 });
 
 export interface ConnectionParams {
@@ -20,8 +42,11 @@ export interface ConnectionParams {
     master_password?: string;
 }
 
-export const testConnection = async (params: ConnectionParams) => {
-    const response = await api.post('/connections/test', params);
+export const testConnection = async (params: ConnectionParams, signal?: AbortSignal) => {
+    const response = await api.post('/connections/test', params, {
+        timeout: 5000,
+        signal: signal
+    });
     return response.data;
 };
 

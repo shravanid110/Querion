@@ -10,7 +10,7 @@ class MongoDBConnector(BaseConnector):
             return {"success": False, "error": "Connection URI is required."}
             
         try:
-            client = MongoClient(uri, serverSelectionTimeoutMS=3000) # Faster feedback
+            client = MongoClient(uri, serverSelectionTimeoutMS=5000) # 5s timeout
             client.server_info() # Trigger connection
             return {"success": True}
         except Exception as e:

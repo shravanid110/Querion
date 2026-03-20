@@ -15,8 +15,23 @@ import { motion } from 'framer-motion';
 import { runQuery } from '@/services/api';
 
 export default function DashboardPage() {
-    const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
-    const [selectedConnectionName, setSelectedConnectionName] = useState<string | null>(null);
+    const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(() => {
+        if (typeof window !== 'undefined') return localStorage.getItem('last_connection_id');
+        return null;
+    });
+    const [selectedConnectionName, setSelectedConnectionName] = useState<string | null>(() => {
+        if (typeof window !== 'undefined') return localStorage.getItem('last_connection_name');
+        return null;
+    });
+
+    // Update localStorage when selection changes
+    const updateSelectedConnection = (id: string, name: string) => {
+        if (selectedConnectionId === id && selectedConnectionName === name) return;
+        setSelectedConnectionId(id);
+        setSelectedConnectionName(name);
+        localStorage.setItem('last_connection_id', id);
+        localStorage.setItem('last_connection_name', name);
+    };
     const [isThinking, setIsThinking] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -98,10 +113,12 @@ export default function DashboardPage() {
                                     {selectedConnectionId ? "Ready to query." : "Select a connection to start."}
                                 </p>
                             </div>
-                            <ConnectionSelector onSelect={(conn) => {
-                                setSelectedConnectionId(conn.id);
-                                setSelectedConnectionName(conn.name);
-                            }} />
+                            <ConnectionSelector 
+                                onSelect={(conn) => {
+                                    updateSelectedConnection(conn.id, conn.name);
+                                }} 
+                                selectedId={selectedConnectionId}
+                            />
                         </div>
 
                         {/* Chat Interface */}

@@ -2,13 +2,13 @@
 
 import React from 'react';
 import { cn } from '@/utils/cn';
-import { LayoutDashboard, Database, History, Settings, FileBarChart, Link as LinkIcon, Activity, Shield, LifeBuoy } from 'lucide-react';
+import { LayoutDashboard, Database, History, Settings, FileBarChart, Link as LinkIcon, Activity, Shield, LifeBuoy, Clock } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 const sidebarItems = [
     { icon: LayoutDashboard, label: 'Dashboard', href: '/dashboard' },
-    { icon: Database, label: 'Connections', href: '/dashboard/connections' },
+    { icon: Clock, label: 'Schedule prompt', href: '/dashboard/schedule' },
     { icon: LinkIcon, label: 'Connect URL', href: '/connect' },
     { icon: History, label: 'Query History', href: '/dashboard/history' },
     { icon: FileBarChart, label: 'Saved Reports', href: '/dashboard/reports' },

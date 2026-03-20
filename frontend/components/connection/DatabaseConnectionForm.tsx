@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import { testConnection, saveConnection, getConnections, verifyMasterPassword } from '@/services/api';
 import { cn } from '@/lib/utils';
+import axios from 'axios';
 
 interface DatabaseConnectionFormProps {
     dbType?: string;
@@ -42,10 +43,12 @@ export const DatabaseConnectionForm = ({ dbType, onClose }: DatabaseConnectionFo
     useEffect(() => {
         const fetchConnections = async () => {
             try {
+                // If this fails with 403, it's fine, we just won't show the saved list
                 const conns = await getConnections();
                 setSavedConnections(conns || []);
             } catch (err) {
-                console.error("Failed to fetch connections", err);
+                console.warn("Failed to fetch connections (user might be logged out)", err);
+                setSavedConnections([]);
             }
         };
         fetchConnections();
@@ -66,20 +69,38 @@ export const DatabaseConnectionForm = ({ dbType, onClose }: DatabaseConnectionFo
         setErrorMessage('');
 
         try {
-            const result = await testConnection({
+            // PRO FIX: Use direct axios to bypass auth interceptor, aligning with Redis/MongoDB buttons
+            const protocol = window.location.protocol;
+            const hostname = window.location.hostname;
+            const API_Base = process.env.NEXT_PUBLIC_API_URL || `${protocol}//${hostname}:4000`;
+            
+            const payload = {
                 ...formData,
                 port: Number(formData.port),
-            } as any);
+            };
 
-            if (result.success) {
+            const response = await axios.post(`${API_Base}/api/connections/test`, payload, {
+                timeout: 5000 // Strict 5s timeout
+            });
+
+            if (response.data.success) {
                 setConnectionStatus('success');
             } else {
                 setConnectionStatus('error');
-                setErrorMessage(result.error || 'Connection failed');
+                setErrorMessage(response.data.error || 'Connection failed');
             }
         } catch (error: any) {
+            console.error('Test connection error:', error);
             setConnectionStatus('error');
-            setErrorMessage(error.response?.data?.error || error.message || 'Connection failed');
+            
+            const data = error.response?.data;
+            if (data?.detail) {
+                setErrorMessage(typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail));
+            } else if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+                setErrorMessage('Connection Timeout: The database server is taking too long to respond.');
+            } else {
+                setErrorMessage(error.message || 'Connection failed');
+            }
         } finally {
             setIsTesting(false);
         }
@@ -88,12 +109,20 @@ export const DatabaseConnectionForm = ({ dbType, onClose }: DatabaseConnectionFo
     const handleSaveConnection = async () => {
         setIsSaving(true);
         try {
-            await saveConnection({
+            const response = await saveConnection({
                 ...formData,
                 port: Number(formData.port),
                 master_password: formData.masterPassword,
                 user_id: 'default_user',
             } as any);
+
+            // Store for dashboard
+            if (response && response.id) {
+                localStorage.setItem('last_connection_id', response.id);
+                localStorage.setItem('last_connection_name', response.name || formData.name);
+                localStorage.setItem('last_connection_type', dbType || 'MySQL');
+            }
+
             router.push('/dashboard');
         } catch (error: any) {
             console.error('Save connection error:', error.response?.data || error.message);
@@ -116,6 +145,11 @@ export const DatabaseConnectionForm = ({ dbType, onClose }: DatabaseConnectionFo
         try {
             const data = await verifyMasterPassword(selectedConnectionId, formData.masterPassword);
             if (data.success) {
+                const conn = savedConnections.find(c => c.id === selectedConnectionId);
+                if (conn) {
+                    localStorage.setItem('last_connection_id', conn.id);
+                    localStorage.setItem('last_connection_name', conn.name);
+                }
                 router.push('/dashboard');
             }
         } catch (error: any) {

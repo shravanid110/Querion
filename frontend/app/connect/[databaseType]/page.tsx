@@ -83,7 +83,7 @@ export default function ConnectDatabasePage({ params }: { params: Promise<{ data
             console.log("Selected dbType:", dbType);
             
             const res = await axios.post(`${API_Base}/api/multidb/test`, payload, { 
-                timeout: 30000 // 30s frontend timeout
+                timeout: 5000 // 5s frontend timeout
             });
 
             if (res.data.success) {
@@ -132,6 +132,11 @@ export default function ConnectDatabasePage({ params }: { params: Promise<{ data
             const res = await axios.post(`${API_Base}/api/multidb/save`, payload);
 
             if (res.data.id) {
+                // Store for dashboard
+                localStorage.setItem('last_connection_id', res.data.id);
+                localStorage.setItem('last_connection_name', res.data.name || formData.name);
+                localStorage.setItem('last_connection_type', dbType);
+
                 setShowSuccessCard(true);
                 // Redirect after 3 seconds
                 setTimeout(() => {
