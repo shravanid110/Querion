@@ -99,3 +99,28 @@ export const runMultidbQuery = async (connectionId: string, prompt: string) => {
     const response = await api.post('/multidb/query', { connectionId, prompt });
     return response.data;
 };
+
+// ── Report API ───────────────────────────────────────────────────────────────
+
+export const generateReport = async (data: any[], query: string): Promise<Blob> => {
+    const response = await api.post('/report/generate-ai', { data, query }, {
+        responseType: 'blob',
+        timeout: 120000, // 2 min timeout – AI + chart gen takes time
+    });
+    return response.data;
+};
+
+export const listSavedReports = async () => {
+    const response = await api.get('/report/list');
+    return response.data;
+};
+
+export const downloadSavedReport = (filename: string): string => {
+    const base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+    return `${base}/api/report/download/${filename}`;
+};
+
+export const deleteSavedReport = async (filename: string) => {
+    const response = await api.delete(`/report/delete/${filename}`);
+    return response.data;
+};

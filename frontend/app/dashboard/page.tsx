@@ -10,9 +10,9 @@ import { ChartPanel } from '@/components/dashboard/ChartPanel';
 import { DataTable } from '@/components/dashboard/DataTable';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { LayoutDashboard, Users, DollarSign, ShoppingCart, Calendar, Database, AlertCircle, Copy, Zap, Code } from 'lucide-react';
+import { LayoutDashboard, Users, DollarSign, Calendar, Database, AlertCircle, Copy, Zap, Code, Plus, FileDown, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { runQuery } from '@/services/api';
+import { runQuery, generateReport } from '@/services/api';
 
 export default function DashboardPage() {
     const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(() => {
@@ -32,7 +32,21 @@ export default function DashboardPage() {
         localStorage.setItem('last_connection_id', id);
         localStorage.setItem('last_connection_name', name);
     };
-    const [results, setResults] = useState<{ prompt: string, data: QueryResult }[]>([]);
+    const [results, setResults] = useState<{ prompt: string, data: QueryResult }[]>(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('current_chat_results');
+            return saved ? JSON.parse(saved) : [];
+        }
+        return [];
+    });
+    const [generatingReport, setGeneratingReport] = useState<number | null>(null);
+
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            localStorage.setItem('current_chat_results', JSON.stringify(results));
+        }
+    }, [results]);
+
     const [isThinking, setIsThinking] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -49,6 +63,8 @@ export default function DashboardPage() {
 
     const [initialPrompt, setInitialPrompt] = useState<string>('');
     const scrollRef = React.useRef<HTMLDivElement>(null);
+    // Track initial mount so we don't clear history on first load
+    const isFirstMount = React.useRef(true);
 
     // Auto-scroll to latest result
     useEffect(() => {
@@ -57,9 +73,17 @@ export default function DashboardPage() {
         }
     }, [results, isThinking]);
 
-    // Clear history when connection changes
+    // Clear history ONLY when the user actively switches to a different database
     useEffect(() => {
+        // Skip on initial mount — we want to preserve localStorage history
+        if (isFirstMount.current) {
+            isFirstMount.current = false;
+            return;
+        }
         setResults([]);
+        if (typeof window !== 'undefined') {
+            localStorage.removeItem('current_chat_results');
+        }
         setError(null);
     }, [selectedConnectionId]);
 
@@ -106,6 +130,27 @@ export default function DashboardPage() {
         }
     };
 
+    const handleGenerateReport = async (index: number) => {
+        const res = results[index];
+        if (!res) return;
+        setGeneratingReport(index);
+        try {
+            const blob = await generateReport(res.data.rows, res.prompt);
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Querion_Report_${Date.now()}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
+        } catch (err: any) {
+            alert('Report generation failed: ' + (err?.message || 'Unknown error'));
+        } finally {
+            setGeneratingReport(null);
+        }
+    };
+
     return (
         <div className="min-h-screen bg-[var(--bg-main)] flex flex-col font-sans">
             <Navbar connectionName={selectedConnectionName} />
@@ -123,11 +168,27 @@ export default function DashboardPage() {
                             
                             {/* Top Bar: Title & Connection Selector */}
                             <div className="flex items-center justify-between">
-                                <div>
-                                    <h1 className="text-3xl font-black text-[var(--text-primary)] tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-[var(--text-primary)] to-[var(--accent-primary)]">Ask Querion</h1>
-                                    <p className="text-sm text-[var(--text-secondary)] font-medium mt-1 uppercase tracking-widest opacity-70">
-                                        {selectedConnectionId ? "Intelligent AI Assistant" : "Select a connection to start."}
-                                    </p>
+                                <div className="flex items-start gap-4">
+                                    <div className="flex flex-col">
+                                        <div className="flex items-center gap-3">
+                                            <h1 className="text-3xl font-black text-[var(--text-primary)] tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-[var(--text-primary)] to-[var(--accent-primary)]">Ask Querion</h1>
+                                            <Button 
+                                                variant="ghost" 
+                                                size="sm" 
+                                                className="h-8 w-8 p-0 rounded-xl bg-[var(--accent-primary)]/10 text-[var(--accent-primary)] hover:bg-[var(--accent-primary)] hover:text-white transition-all shadow-lg shadow-[var(--accent-glow)]/10"
+                                                onClick={() => {
+                                                    setResults([]);
+                                                    localStorage.removeItem('current_chat_results');
+                                                }}
+                                                title="New Chat Session"
+                                            >
+                                                <Plus size={18} />
+                                            </Button>
+                                        </div>
+                                        <p className="text-sm text-[var(--text-secondary)] font-medium mt-1 uppercase tracking-widest opacity-70">
+                                            {selectedConnectionId ? "Intelligent AI Assistant" : "Select a connection to start."}
+                                        </p>
+                                    </div>
                                 </div>
                                 <ConnectionSelector 
                                     onSelect={(conn) => {
@@ -171,9 +232,23 @@ export default function DashboardPage() {
                                             size="sm" 
                                             className="gap-2 text-[var(--accent-primary)] hover:bg-[var(--accent-primary)]/10"
                                             onClick={() => handleSearch(res.prompt)}
+                                            disabled={isThinking}
                                         >
                                             <Zap size={14} />
                                             <span>Replay</span>
+                                        </Button>
+                                        <Button 
+                                            variant="ghost" 
+                                            size="sm" 
+                                            className="gap-1.5 text-emerald-400 hover:bg-emerald-500/10 border border-emerald-500/20 hover:border-emerald-500/50 transition-all"
+                                            onClick={() => handleGenerateReport(index)}
+                                            disabled={generatingReport !== null}
+                                        >
+                                            {generatingReport === index ? (
+                                                <><Loader2 size={14} className="animate-spin" /><span>Generating...</span></>
+                                            ) : (
+                                                <><FileDown size={14} /><span>Report</span></>
+                                            )}
                                         </Button>
                                     </div>
 
