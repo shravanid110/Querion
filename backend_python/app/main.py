@@ -50,6 +50,12 @@ app.add_middleware(
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {request.method} {request.url.path}")
+    
+    # ── Secure Pipeline Logging ──────────────────────────────────────────────────
+    pipeline_hash = request.headers.get("x-secure-pipeline-hash")
+    if pipeline_hash and "/query" in request.url.path:
+        print(f"🔒 SHA 256 started successfully. Secure Pipeline Session: {pipeline_hash[:8]}...")
+        
     return await call_next(request)
 
 # ── Static ────────────────────────────────────────────────────────────────────

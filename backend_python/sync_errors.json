@@ -1,0 +1,87 @@
+[
+  {
+    "id": "c3b08304-6278-4fcf-babd-2e95929117b1",
+    "status": 401,
+    "text": "{\"code\":\"42501\",\"details\":null,\"hint\":null,\"message\":\"new row violates row-level security policy for table \\\"connections\\\"\"}"
+  },
+  {
+    "id": "362a28a1-560f-425f-b0c6-16b9ded9d44f",
+    "status": 401,
+    "text": "{\"code\":\"42501\",\"details\":null,\"hint\":null,\"message\":\"new row violates row-level security policy for table \\\"connections\\\"\"}"
+  },
+  {
+    "id": "bf118390-f31f-4604-846e-184a02cbb8bd",
+    "status": 401,
+    "text": "{\"code\":\"42501\",\"details\":null,\"hint\":null,\"message\":\"new row violates row-level security policy for table \\\"connections\\\"\"}"
+  },
+  {
+    "id": "c4864d15-93bd-4d13-aa89-5362c48a6321",
+    "status": 401,
+    "text": "{\"code\":\"42501\",\"details\":null,\"hint\":null,\"message\":\"new row violates row-level security policy for table \\\"connections\\\"\"}"
+  },
+  {
+    "id": "bc40a193-5f30-4a00-b637-9a227a4ebd84",
+    "status": 401,
+    "text": "{\"code\":\"42501\",\"details\":null,\"hint\":null,\"message\":\"new row violates row-level security policy for table \\\"connections\\\"\"}"
+  },
+  {
+    "id": "063e2de0-43fd-4a0f-a7c7-12123bc88a17",
+    "status": 401,
+    "text": "{\"code\":\"42501\",\"details\":null,\"hint\":null,\"message\":\"new row violates row-level security policy for table \\\"connections\\\"\"}"
+  },
+  {
+    "id": "a140120a-e038-4b54-b3e4-d95f7948be6c",
+    "status": 401,
+    "text": "{\"code\":\"42501\",\"details\":null,\"hint\":null,\"message\":\"new row violates row-level security policy for table \\\"connections\\\"\"}"
+  },
+  {
+    "id": "fcc74724-ad25-44d0-b107-4360ff9e2765",
+    "status": 401,
+    "text": "{\"code\":\"42501\",\"details\":null,\"hint\":null,\"message\":\"new row violates row-level security policy for table \\\"connections\\\"\"}"
+  },
+  {
+    "id": "e90ba4c0-d390-4706-9f98-8394e810e472",
+    "status": 401,
+    "text": "{\"code\":\"42501\",\"details\":null,\"hint\":null,\"message\":\"new row violates row-level security policy for table \\\"connections\\\"\"}"
+  },
+  {
+    "id": "d1c0f2e1-6765-420c-9a5b-e3ac04df72c0",
+    "status": 401,
+    "text": "{\"code\":\"42501\",\"details\":null,\"hint\":null,\"message\":\"new row violates row-level security policy for table \\\"connections\\\"\"}"
+  },
+  {
+    "id": "3339c16f-c255-4e83-8c91-4d21c8821dd9",
+    "status": 401,
+    "text": "{\"code\":\"42501\",\"details\":null,\"hint\":null,\"message\":\"new row violates row-level security policy for table \\\"connections\\\"\"}"
+  },
+  {
+    "id": "8cfd0076-7222-4f0b-b794-b083db2cf421",
+    "status": 401,
+    "text": "{\"code\":\"42501\",\"details\":null,\"hint\":null,\"message\":\"new row violates row-level security policy for table \\\"connections\\\"\"}"
+  },
+  {
+    "id": "d73bf644-6f1c-4341-8198-cc6966436ec2",
+    "status": 401,
+    "text": "{\"code\":\"42501\",\"details\":null,\"hint\":null,\"message\":\"new row violates row-level security policy for table \\\"connections\\\"\"}"
+  },
+  {
+    "id": "65b25610-cbe4-499a-ae3a-7c1a02831e92",
+    "status": 401,
+    "text": "{\"code\":\"42501\",\"details\":null,\"hint\":null,\"message\":\"new row violates row-level security policy for table \\\"connections\\\"\"}"
+  },
+  {
+    "id": "8eba414d-dade-45b9-9325-16b4546d74a4",
+    "status": 401,
+    "text": "{\"code\":\"42501\",\"details\":null,\"hint\":null,\"message\":\"new row violates row-level security policy for table \\\"connections\\\"\"}"
+  },
+  {
+    "id": "f0a25e89-6b75-4614-8ac3-82cb0868647b",
+    "status": 401,
+    "text": "{\"code\":\"42501\",\"details\":null,\"hint\":null,\"message\":\"new row violates row-level security policy for table \\\"connections\\\"\"}"
+  },
+  {
+    "id": "fb466e54-c0a2-4e4a-af5d-8c5f90195a6d",
+    "status": 401,
+    "text": "{\"code\":\"42501\",\"details\":null,\"hint\":null,\"message\":\"new row violates row-level security policy for table \\\"connections\\\"\"}"
+  }
+]

@@ -11,6 +11,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { testConnection, saveConnection } from '@/services/api';
 import axios from 'axios';
+import { supabase } from '@/lib/supabaseClient';
 
 const DB_DATA: Record<string, any> = {
     postgresql: { name: 'PostgreSQL', icon: 'https://cdn.jsdelivr.net/gh/devicons/devicon/icons/postgresql/postgresql-original.svg', driver: 'pg', defaultPort: 5432, desc: 'Advanced open-source relational database used by modern applications.' },
@@ -116,12 +117,16 @@ export default function ConnectDatabasePage({ params }: { params: Promise<{ data
             const axios = (await import('axios')).default;
             const API_Base = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:4000';
             
+            // Get actual user ID
+            const { data: authData } = await supabase.auth.getUser();
+            const userId = authData?.user?.id || 'default_user';
+
             const payload: Record<string, any> = {
                 ...formData,
                 dbType: dbType,
                 master_password: formData.masterPassword, // Map to backend snake_case
                 port: Number(formData.port),
-                user_id: 'default_user'
+                user_id: userId
             };
 
             // For Firebase, ensure the JSON is stored in the uri field
@@ -132,6 +137,27 @@ export default function ConnectDatabasePage({ params }: { params: Promise<{ data
             const res = await axios.post(`${API_Base}/api/multidb/save`, payload);
 
             if (res.data.id) {
+                // Dual write to Supabase directly so it shows up in their Supabase console
+                if (authData?.user?.id) {
+                    try {
+                        const { error } = await supabase.from('multidb_connections').insert([{
+                            id: res.data.id,
+                            user_id: authData.user.id,
+                            db_type: dbType,
+                            name: formData.name || `${dbInfo.name} Connection`,
+                            host: formData.host || null,
+                            port: Number(formData.port) || null,
+                            database: formData.database || null,
+                            username: formData.username || null,
+                            password: 'ENCRYPTED_BY_BACKEND',
+                            uri: (formData as any).serviceAccountJson || formData.uri || null
+                        }]);
+                        if (error) console.error("Supabase insert error:", error);
+                    } catch(e) {
+                        console.error("Failed to dual-write to Supabase:", e);
+                    }
+                }
+
                 // Store for dashboard
                 localStorage.setItem('last_connection_id', res.data.id);
                 localStorage.setItem('last_connection_name', res.data.name || formData.name);

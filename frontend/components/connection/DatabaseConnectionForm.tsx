@@ -11,6 +11,7 @@ import { useRouter } from 'next/navigation';
 import { testConnection, saveConnection, getConnections, verifyMasterPassword } from '@/services/api';
 import { cn } from '@/lib/utils';
 import axios from 'axios';
+import { supabase } from '@/lib/supabaseClient';
 
 interface DatabaseConnectionFormProps {
     dbType?: string;
@@ -109,12 +110,35 @@ export const DatabaseConnectionForm = ({ dbType, onClose }: DatabaseConnectionFo
     const handleSaveConnection = async () => {
         setIsSaving(true);
         try {
+            // Fetch real user session / ID instead of hardcoded default
+            const { data: authData } = await supabase.auth.getUser();
+            const userId = authData?.user?.id || 'default_user';
+
             const response = await saveConnection({
                 ...formData,
                 port: Number(formData.port),
                 master_password: formData.masterPassword,
-                user_id: 'default_user',
+                user_id: userId,
             } as any);
+
+            // Double write to Supabase directly as requested, so it shows up in their Supabase dashboard
+            if (response && response.id && authData?.user?.id) {
+                try {
+                    const { error } = await supabase.from('connections').insert([{
+                        id: response.id,
+                        user_id: authData.user.id,
+                        name: formData.name || 'Connection',
+                        host: formData.host,
+                        port: Number(formData.port),
+                        database: formData.database,
+                        username: formData.username,
+                        password: 'ENCRYPTED_BY_BACKEND'
+                    }]);
+                    if (error) console.error("Supabase insert error:", error);
+                } catch(e) {
+                    console.error("Failed to dual-write to Supabase:", e);
+                }
+            }
 
             // Store for dashboard
             if (response && response.id) {

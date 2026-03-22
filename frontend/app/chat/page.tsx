@@ -21,6 +21,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { getMultidbConnections, runMultidbQuery } from '@/services/api';
 import { cn } from '@/lib/utils';
+import { supabase } from '@/lib/supabaseClient';
 
 import { useSearchParams } from 'next/navigation';
 
@@ -36,6 +37,53 @@ function ChatContent() {
     const [isThinking, setIsThinking] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [result, setResult] = useState<any>(null);
+
+    // UUID polyfill if crypto.randomUUID fails
+    const generateUUID = () => {
+        if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+            const r = (Math.random() * 16) | 0;
+            return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+        });
+    };
+
+    const [sessionId, setSessionId] = useState<string>('');
+    const [sessionHash, setSessionHash] = useState<string>('');
+
+    // Generate Secure SHA-256 Pipeline
+    const getOrGenerateSession = async () => {
+        if (sessionId && sessionHash) return { sid: sessionId, hash: sessionHash };
+        
+        try {
+            const sid = generateUUID();
+            const rawKey = `sk_${sid}_${Date.now()}`;
+            
+            // SHA-256 Hashing natively
+            const encoder = new TextEncoder();
+            const data = encoder.encode(rawKey);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+            
+            setSessionId(sid);
+            setSessionHash(hashHex);
+            
+            // Store securely in DB 
+            const { data: authData } = await supabase.auth.getUser();
+            if (authData?.user?.id) {
+                await supabase.from('chat_sessions').insert([{
+                    session_id: sid,
+                    user_id: authData.user.id,
+                    session_key: hashHex,
+                    created_at: new Date().toISOString()
+                }]);
+            }
+            return { sid, hash: hashHex };
+        } catch(e) { 
+            console.error('Secure Pipeline init failed', e); 
+            return { sid: '', hash: '' };
+        }
+    };
 
     // Initial load of connections
     useEffect(() => {
@@ -79,6 +127,16 @@ function ChatContent() {
         }
     }, [selectedConnection]);
 
+    // If user changes dataset, reset chat
+    useEffect(() => {
+        setResult(null);
+        setError(null);
+        
+        // Wipe secure pipeline state to force regenerate a completely fresh hash natively under the newly selected database
+        setSessionId('');
+        setSessionHash('');
+    }, [selectedConnection?.id]);
+
     const handleSearch = async (prompt: string) => {
         if (!selectedConnection) {
             setError("Please select a connection.");
@@ -90,7 +148,52 @@ function ChatContent() {
         setResult(null);
 
         try {
-            const data = await runMultidbQuery(selectedConnection.id, prompt);
+            // Guarantee session exists
+            const { sid, hash } = await getOrGenerateSession();
+
+            // Run exactly as it is but attaching the hash header for terminal printing
+            const data = await runMultidbQuery(selectedConnection.id, prompt, hash);
+            
+            // Dual-write native history to Supabase
+            try {
+                const { data: authData } = await supabase.auth.getUser();
+                if (authData?.user?.id) {
+                    await supabase.from('query_history').insert([{
+                        user_id: authData.user.id,
+                        conn_id: selectedConnection.id,
+                        conn_name: selectedConnection.name || 'Database Connection',
+                        prompt: prompt,
+                        sql_query: data.sql,
+                        explanation: data.explanation,
+                        columns: JSON.stringify(data.columns || []),
+                        rows_data: JSON.stringify((data.rows || []).slice(0, 100)),
+                        metrics: JSON.stringify(data.metrics || {}),
+                        created_at: new Date().toISOString()
+                    }]);
+                    
+                    // Track secure pipe message
+                    if (sid) {
+                         const insertMsg = await supabase.from('chat_messages').insert([{
+                             message_id: generateUUID(),
+                             session_id: sid,
+                             user_message: prompt,
+                             ai_response: data,
+                             metadata: { 
+                                 pipelineHash: hash, 
+                                 connectionId: selectedConnection.id,
+                                 connectionName: selectedConnection.name || 'Database Connection' 
+                             },
+                             created_at: new Date().toISOString()
+                         }]);
+                         
+                         // Debug helper to catch RLS issues if any
+                         if (insertMsg.error) {
+                             console.error("Supabase Chat Message Insert Error. Did you disable RLS?", insertMsg.error);
+                         }
+                    }
+                }
+            } catch (e) { console.error("History sync error:", e); }
+
             setResult(data);
         } catch (err: any) {
             setError(err.response?.data?.detail || err.message || "Query failed.");

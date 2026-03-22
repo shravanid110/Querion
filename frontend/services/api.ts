@@ -65,8 +65,9 @@ export const deleteConnection = async (id: string) => {
     return response.data;
 };
 
-export const runQuery = async (connectionId: string, prompt: string) => {
-    const response = await api.post('/query/run', { connectionId, prompt });
+export const runQuery = async (connectionId: string, prompt: string, pipelineHash?: string) => {
+    const config = pipelineHash ? { headers: { 'x-secure-pipeline-hash': pipelineHash } } : {};
+    const response = await api.post('/query/run', { connectionId, prompt }, config);
     return response.data; // { sql, columns, rows, metrics, explanation }
 };
 
@@ -95,8 +96,9 @@ export const getMultidbConnections = async () => {
     return response.data;
 };
 
-export const runMultidbQuery = async (connectionId: string, prompt: string) => {
-    const response = await api.post('/multidb/query', { connectionId, prompt });
+export const runMultidbQuery = async (connectionId: string, prompt: string, pipelineHash?: string) => {
+    const config = pipelineHash ? { headers: { 'x-secure-pipeline-hash': pipelineHash } } : {};
+    const response = await api.post('/multidb/query', { connectionId, prompt }, config);
     return response.data;
 };
 
