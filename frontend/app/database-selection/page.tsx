@@ -37,67 +37,77 @@ export default function DatabaseSelectionPage() {
             <Navbar />
 
             <main className="flex-1 flex flex-col pt-32 pb-20 px-6 max-w-7xl mx-auto w-full">
-                <div className="mb-12 space-y-4">
-                    <Link href="/" className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors text-sm font-medium w-fit mb-6">
-                        <ArrowLeft size={16} /> Back to Home
-                    </Link>
-                    <h1 className="text-4xl font-bold text-white tracking-tight">Choose Your Database</h1>
-                    <p className="text-slate-400 text-lg">Select the database you want Querion to connect with.</p>
-                </div>
+                <AnimatePresence mode="wait">
+                    <motion.div
+                        key="selection-view"
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -20 }}
+                        className="w-full"
+                    >
+                        <div className="mb-12 space-y-4">
+                            <Link href="/" className="flex items-center gap-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors text-sm font-bold uppercase tracking-widest w-fit mb-6">
+                                <ArrowLeft size={16} /> Back to Home
+                            </Link>
+                            <h1 className="text-4xl font-extrabold text-[var(--text-primary)] tracking-tight">Choose Your Database</h1>
+                            <p className="text-[var(--text-secondary)] text-lg">Select the database you want Querion to connect with.</p>
+                        </div>
 
-                {/* Search Bar */}
-                <div className="relative mb-12 max-w-2xl">
-                    <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
-                        <Search size={20} className="text-slate-500" />
-                    </div>
-                    <input
-                        type="text"
-                        placeholder="Search databases..."
-                        className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all text-lg"
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                    />
-                </div>
-
-                {/* Database Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                    {filteredDbs.map((db, idx) => (
-                        <motion.div
-                            key={db.id}
-                            initial={{ opacity: 0, y: 20 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ duration: 0.4, delay: idx * 0.05 }}
-                            whileHover={{ y: -5 }}
-                            onClick={() => {
-                                if (db.id === 'mysql') {
-                                    setSelectedDb(db.name);
-                                } else {
-                                    router.push(`/connect/${db.id}`);
-                                }
-                            }}
-                            className="group relative cursor-pointer flex flex-col p-6 rounded-[24px] glass-card border-white/10 hover:border-indigo-500/50 transition-all duration-300 shadow-xl"
-                        >
-                            <div className="mb-6 bg-white/5 w-16 h-16 rounded-2xl flex items-center justify-center border border-white/10 group-hover:bg-white/10 transition-colors p-3">
-                                {db.logo.startsWith('http') ? (
-                                    <img src={db.logo} alt={db.name} className="w-full h-full object-contain" />
-                                ) : (
-                                    <Database size={32} className="text-indigo-400" />
-                                )}
+                        {/* Search Bar */}
+                        <div className="relative mb-12 max-w-2xl">
+                            <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
+                                <Search size={20} className="text-[var(--text-secondary)]" />
                             </div>
+                            <input
+                                type="text"
+                                placeholder="Search databases..."
+                                className="w-full bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl py-4 pl-12 pr-4 text-[var(--text-primary)] placeholder:text-[var(--text-secondary)]/50 focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)]/50 transition-all text-lg"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                            />
+                        </div>
 
-                            <h3 className="text-xl font-bold text-white mb-2">{db.name}</h3>
-                            <p className="text-slate-400 text-sm leading-relaxed mb-6 flex-1">
-                                {db.description}
-                            </p>
+                        {/* Database Grid */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                            {filteredDbs.map((db, idx) => (
+                                <motion.div
+                                    key={db.id}
+                                    initial={{ opacity: 0, y: 20 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ duration: 0.4, delay: idx * 0.05 }}
+                                    whileHover={{ y: -5 }}
+                                    onClick={() => {
+                                        if (db.id === 'mysql') {
+                                            setSelectedDb(db.name);
+                                        } else {
+                                            router.push(`/connect/${db.id}`);
+                                        }
+                                    }}
+                                    className="group relative cursor-pointer flex flex-col p-6 rounded-[24px] glass-card border-[var(--border-color)] hover:border-[var(--accent-primary)]/50 transition-all duration-300 shadow-xl"
+                                >
+                                    <div className="mb-6 bg-[var(--accent-glow)]/10 w-16 h-16 rounded-2xl flex items-center justify-center border border-[var(--border-color)] group-hover:bg-[var(--accent-glow)]/20 transition-colors p-3">
+                                        {db.logo.startsWith('http') ? (
+                                            <img src={db.logo} alt={db.name} className="w-full h-full object-contain" />
+                                        ) : (
+                                            <Database size={32} className="text-[var(--accent-primary)]" />
+                                        )}
+                                    </div>
 
-                            <Button className="w-full h-11 rounded-xl bg-indigo-600/10 hover:bg-indigo-600 text-indigo-400 hover:text-white border border-indigo-500/20 group-hover:border-indigo-500 hover:shadow-lg hover:shadow-indigo-500/20 transition-all duration-300 font-semibold text-sm">
-                                Connect
-                            </Button>
+                                    <h3 className="text-xl font-bold text-[var(--text-primary)] mb-2 tracking-tight">{db.name}</h3>
+                                    <p className="text-[var(--text-secondary)] text-sm leading-relaxed mb-6 flex-1">
+                                        {db.description}
+                                    </p>
 
-                            <div className="absolute -inset-[1px] bg-gradient-to-r from-indigo-500 to-cyan-500 rounded-[24px] z-[-1] opacity-0 group-hover:opacity-10 transition-opacity" />
-                        </motion.div>
-                    ))}
-                </div>
+                                    <Button className="w-full h-11 rounded-xl bg-[var(--accent-glow)]/10 hover:bg-[var(--accent-primary)] text-[var(--accent-primary)] hover:text-white border border-[var(--accent-primary)]/20 group-hover:border-[var(--accent-primary)] hover:shadow-lg hover:shadow-[var(--accent-glow)] transition-all duration-300 font-semibold text-sm">
+                                        Connect
+                                    </Button>
+
+                                    <div className="absolute -inset-[1px] bg-gradient-to-r from-[var(--accent-primary)] to-[var(--accent-secondary)] rounded-[24px] z-[-1] opacity-0 group-hover:opacity-10 transition-opacity" />
+                                </motion.div>
+                            ))}
+                        </div>
+                    </motion.div>
+                </AnimatePresence>
             </main>
 
             {/* Connection Modal */}

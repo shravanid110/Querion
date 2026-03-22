@@ -10,7 +10,7 @@ import { ChartPanel } from '@/components/dashboard/ChartPanel';
 import { DataTable } from '@/components/dashboard/DataTable';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { LayoutDashboard, Users, DollarSign, ShoppingCart, Calendar, Database, AlertCircle, Copy } from 'lucide-react';
+import { LayoutDashboard, Users, DollarSign, ShoppingCart, Calendar, Database, AlertCircle, Copy, Zap, Code } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { runQuery } from '@/services/api';
 
@@ -32,6 +32,7 @@ export default function DashboardPage() {
         localStorage.setItem('last_connection_id', id);
         localStorage.setItem('last_connection_name', name);
     };
+    const [results, setResults] = useState<{ prompt: string, data: QueryResult }[]>([]);
     const [isThinking, setIsThinking] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -46,8 +47,21 @@ export default function DashboardPage() {
         };
     }
 
-    const [result, setResult] = useState<QueryResult | null>(null);
     const [initialPrompt, setInitialPrompt] = useState<string>('');
+    const scrollRef = React.useRef<HTMLDivElement>(null);
+
+    // Auto-scroll to latest result
+    useEffect(() => {
+        if (scrollRef.current) {
+            scrollRef.current.scrollIntoView({ behavior: 'smooth' });
+        }
+    }, [results, isThinking]);
+
+    // Clear history when connection changes
+    useEffect(() => {
+        setResults([]);
+        setError(null);
+    }, [selectedConnectionId]);
 
     useEffect(() => {
         if (typeof window !== 'undefined') {
@@ -63,7 +77,7 @@ export default function DashboardPage() {
 
     // Try to auto-run the pre-filled prompt if we get a connection
     useEffect(() => {
-        if (initialPrompt && selectedConnectionId && !result && !isThinking && !error) {
+        if (initialPrompt && selectedConnectionId && results.length === 0 && !isThinking && !error) {
             const run = async () => {
                 await handleSearch(initialPrompt);
                 setInitialPrompt(''); // Clear to prevent infinite loops on reconnect 
@@ -80,11 +94,10 @@ export default function DashboardPage() {
 
         setIsThinking(true);
         setError(null);
-        setResult(null);
 
         try {
             const data = await runQuery(selectedConnectionId, prompt);
-            setResult(data);
+            setResults(prev => [...prev, { prompt, data }]);
         } catch (err: any) {
             console.error("Query failed", err);
             setError(err.response?.data?.error || err.message || "Failed to execute query.");
@@ -94,142 +107,218 @@ export default function DashboardPage() {
     };
 
     return (
-        <div className="min-h-screen bg-gray-50 flex flex-col font-sans">
+        <div className="min-h-screen bg-[var(--bg-main)] flex flex-col font-sans">
             <Navbar connectionName={selectedConnectionName} />
 
             <div className="flex pt-16 h-screen overflow-hidden">
                 {/* Sidebar */}
                 <Sidebar />
 
-                {/* Main Content */}
-                <main className="flex-1 ml-64 p-8 overflow-y-auto pb-24 scroll-smooth">
-                    <div className="max-w-7xl mx-auto space-y-8">
-
-                        {/* Top Bar: Title & Connection Selector */}
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Dashboard</h1>
-                                <p className="text-sm text-gray-500 mt-1">
-                                    {selectedConnectionId ? "Ready to query." : "Select a connection to start."}
-                                </p>
-                            </div>
-                            <ConnectionSelector 
-                                onSelect={(conn) => {
-                                    updateSelectedConnection(conn.id, conn.name);
-                                }} 
-                                selectedId={selectedConnectionId}
-                            />
-                        </div>
-
-                        {/* Chat Interface */}
-                        <div className="py-4">
-                            <ChatInterface
-                                onSearch={handleSearch}
-                                isThinking={isThinking}
-                                generatedSql={result?.sql}
-                                explanation={result?.explanation}
-                                initialQuery={initialPrompt}
-                            />
-                        </div>
-
-                        {error && (
-                            <div className="p-4 bg-red-50 border border-red-100 text-red-700 rounded-lg flex items-center gap-2">
-                                <AlertCircle size={20} />
-                                <span>{error}</span>
-                            </div>
-                        )}
-
-                        {/* Results Section */}
-                        {result && (
-                            <motion.div
-                                initial={{ opacity: 0, y: 20 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ duration: 0.5, ease: "easeOut" }}
-                                className="space-y-8"
-                            >
-                                {/* Metrics Row */}
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                                    <MetricCard
-                                        label="Total Rows"
-                                        value={result.metrics.totalRows.toLocaleString()}
-                                        icon={Database}
-                                        color="indigo"
-                                    />
-                                    <MetricCard
-                                        label="Total Value (Approx)"
-                                        value={result.metrics.approxSum > 0 ? result.metrics.approxSum.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "-"}
-                                        icon={DollarSign}
-                                        color="emerald"
-                                        subValue="Sum of first numeric column"
-                                    />
-                                    {/* Placeholder metrics as real dynamic metrics require deeper analysis */}
-                                    <MetricCard
-                                        label="Columns"
-                                        value={result.columns.length.toString()}
-                                        icon={LayoutDashboard}
-                                        color="blue"
-                                    />
-                                    <MetricCard
-                                        label="Query Status"
-                                        value="Success"
-                                        icon={Calendar} // Using generic icon
-                                        color="violet"
-                                        trend="up"
-                                        trendValue="100%"
-                                    />
+                {/* Main Content Area */}
+                <div className="flex-1 ml-64 flex flex-col relative h-full">
+                    
+                    {/* Results / Scrollable Section */}
+                    <main className="flex-1 overflow-y-auto custom-scrollbar p-8 pb-40 scroll-smooth">
+                        <div className="max-w-7xl mx-auto space-y-8">
+                            
+                            {/* Top Bar: Title & Connection Selector */}
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <h1 className="text-3xl font-black text-[var(--text-primary)] tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-[var(--text-primary)] to-[var(--accent-primary)]">Ask Querion</h1>
+                                    <p className="text-sm text-[var(--text-secondary)] font-medium mt-1 uppercase tracking-widest opacity-70">
+                                        {selectedConnectionId ? "Intelligent AI Assistant" : "Select a connection to start."}
+                                    </p>
                                 </div>
+                                <ConnectionSelector 
+                                    onSelect={(conn) => {
+                                        updateSelectedConnection(conn.id, conn.name);
+                                    }} 
+                                    selectedId={selectedConnectionId}
+                                />
+                            </div>
 
-                                {/* Chart and Table Layout */}
-                                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                                    <div className="lg:col-span-2 h-[450px]">
-                                        <ChartPanel data={result.rows} columns={result.columns} />
+                            {error && (
+                                <div className="p-4 bg-red-500/10 border border-red-500/20 text-red-400 rounded-2xl flex items-center gap-3 shadow-lg shadow-red-500/5 backdrop-blur-sm">
+                                    <AlertCircle size={20} />
+                                    <span className="font-semibold">{error}</span>
+                                </div>
+                            )}
+
+                            {/* Results Section */}
+                            {results.map((res, index) => (
+                                <motion.div
+                                    key={index}
+                                    initial={{ opacity: 0, y: 30 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+                                    className="space-y-10 border-b border-[var(--border-color)] pb-16 last:border-0"
+                                >
+                                    {/* Query Header */}
+                                    <div className="flex items-center justify-between bg-[var(--accent-glow)]/10 p-4 rounded-2xl border border-[var(--accent-primary)]/20 backdrop-blur-sm">
+                                        <div className="flex items-center gap-4">
+                                            <div className="bg-[var(--accent-primary)]/10 p-2.5 rounded-xl text-[var(--accent-primary)]">
+                                                <Users size={20} />
+                                            </div>
+                                            <div>
+                                                <h2 className="text-lg font-bold text-[var(--text-primary)] tracking-tight">
+                                                    {res.prompt}
+                                                </h2>
+                                                <p className="text-[10px] text-[var(--text-secondary)] font-bold uppercase tracking-widest opacity-60">User Query • #{index + 1}</p>
+                                            </div>
+                                        </div>
+                                        <Button 
+                                            variant="ghost" 
+                                            size="sm" 
+                                            className="gap-2 text-[var(--accent-primary)] hover:bg-[var(--accent-primary)]/10"
+                                            onClick={() => handleSearch(res.prompt)}
+                                        >
+                                            <Zap size={14} />
+                                            <span>Replay</span>
+                                        </Button>
                                     </div>
-                                    <div className="lg:col-span-1 min-h-[450px]">
-                                        <Card className="h-full border-0 shadow-lg shadow-gray-100 flex flex-col p-0 overflow-hidden">
-                                            <div className="p-4 border-b border-gray-50 flex items-center justify-between bg-indigo-50/30">
-                                                <div className="flex items-center gap-3">
-                                                    <div className="bg-indigo-600 p-2 rounded-lg text-white">
-                                                        <LayoutDashboard size={20} />
-                                                    </div>
-                                                    <h3 className="font-bold text-gray-900 tracking-tight">AI Insights & Summary</h3>
+
+                                    {/* Metrics Row */}
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+                                        <MetricCard
+                                            label="Total Rows"
+                                            value={res.data.metrics.totalRows.toLocaleString()}
+                                            icon={Database}
+                                            color="indigo"
+                                        />
+                                        <MetricCard
+                                            label="Total Value (Approx)"
+                                            value={res.data.metrics.approxSum > 0 ? res.data.metrics.approxSum.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "-"}
+                                            icon={DollarSign}
+                                            color="emerald"
+                                            subValue="Sum of first numeric column"
+                                        />
+                                        <MetricCard
+                                            label="Columns"
+                                            value={res.data.columns.length.toString()}
+                                            icon={LayoutDashboard}
+                                            color="blue"
+                                        />
+                                        <MetricCard
+                                            label="Query Status"
+                                            value="Success"
+                                            icon={Calendar}
+                                            color="violet"
+                                            trend="up"
+                                            trendValue="100%"
+                                        />
+                                    </div>
+
+                                    {/* Generated SQL Section */}
+                                    {res.data.sql && (
+                                        <div className="bg-gray-900/40 backdrop-blur-xl rounded-2xl overflow-hidden border border-white/5 shadow-2xl">
+                                            <div className="flex items-center justify-between px-6 py-4 bg-white/5 border-b border-white/5">
+                                                <div className="flex items-center gap-3 text-[10px] font-black text-white/50 uppercase tracking-[0.3em]">
+                                                    <Code size={16} className="text-[var(--accent-primary)]" />
+                                                    <span>Generated Query</span>
                                                 </div>
                                                 <Button
                                                     variant="ghost"
                                                     size="sm"
-                                                    className="h-8 w-8 p-0 text-gray-400 hover:text-indigo-600"
-                                                    onClick={() => navigator.clipboard.writeText(result.explanation || "")}
+                                                    className="h-8 w-8 p-0 text-white/30 hover:text-white hover:bg-white/10 rounded-lg"
+                                                    onClick={() => navigator.clipboard.writeText(res.data.sql)}
                                                 >
                                                     <Copy size={16} />
                                                 </Button>
                                             </div>
-                                            <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
-                                                <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap font-sans">
-                                                    {result.explanation || "No insights generated for this query."}
+                                            <div className="p-8 overflow-x-auto custom-scrollbar bg-black/20">
+                                                <pre className="font-mono text-sm text-cyan-400/90 leading-relaxed">
+                                                    <code>{res.data.sql}</code>
+                                                </pre>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Chart and Table Layout */}
+                                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                                        <div className="lg:col-span-2 min-h-[450px]">
+                                            <ChartPanel data={res.data.rows} columns={res.data.columns} />
+                                        </div>
+                                        <div className="lg:col-span-1">
+                                            <Card className="h-full min-h-[450px] border-0 glass-card flex flex-col p-0 overflow-hidden shadow-2xl">
+                                                <div className="p-5 border-b border-[var(--border-color)] flex items-center justify-between bg-gradient-to-r from-[var(--accent-glow)] to-transparent">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="bg-[var(--accent-primary)] p-2 rounded-xl text-white shadow-lg shadow-[var(--accent-glow)]">
+                                                            <Zap size={20} />
+                                                        </div>
+                                                        <h3 className="font-black text-[var(--text-primary)] tracking-tight">AI Analysis</h3>
+                                                    </div>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="h-9 w-9 p-0 text-[var(--text-secondary)] hover:text-[var(--accent-primary)] hover:bg-[var(--accent-glow)] rounded-xl"
+                                                        onClick={() => navigator.clipboard.writeText(res.data.explanation || "")}
+                                                    >
+                                                        <Copy size={16} />
+                                                    </Button>
                                                 </div>
-                                            </div>
-                                            <div className="p-3 bg-gray-50/50 border-t border-gray-100 text-[10px] text-gray-400 text-center uppercase tracking-widest font-semibold">
-                                                Generated by Querion AI
-                                            </div>
-                                        </Card>
+                                                <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
+                                                    <div className="text-sm text-[var(--text-primary)] opacity-90 leading-relaxed whitespace-pre-wrap font-sans font-medium">
+                                                        {res.data.explanation || "No insights generated for this query."}
+                                                    </div>
+                                                </div>
+                                                <div className="p-3 bg-[var(--bg-nav)] border-t border-[var(--border-color)] text-[9px] text-[var(--text-secondary)] text-center uppercase tracking-[0.3em] font-black opacity-60">
+                                                    Generated by Querion AI Engine
+                                                </div>
+                                            </Card>
+                                        </div>
                                     </div>
+
+                                    <div className="w-full pb-10">
+                                        <DataTable columns={res.data.columns} rows={res.data.rows} />
+                                    </div>
+                                </motion.div>
+                            ))}
+                            
+                            {/* Thinking State in History */}
+                            {isThinking && (
+                                <motion.div 
+                                    initial={{ opacity: 0, scale: 0.95 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    className="flex flex-col items-center justify-center py-20 bg-indigo-500/5 rounded-3xl border border-indigo-500/10 border-dashed"
+                                >
+                                    <div className="relative">
+                                        <div className="absolute -inset-4 bg-indigo-500/20 rounded-full blur-xl animate-pulse"></div>
+                                        <Zap size={40} className="text-indigo-400 animate-bounce relative z-10" />
+                                    </div>
+                                    <h3 className="mt-6 text-xl font-bold text-white tracking-tight">Querion is Thinking...</h3>
+                                    <p className="text-sm text-slate-400 mt-2">Processing your natural language query into optimized SQL</p>
+                                </motion.div>
+                            )}
+
+                            {/* Anchor for auto-scroll */}
+                            <div ref={scrollRef} className="h-4" />
+
+                            {results.length === 0 && !isThinking && !error && (
+                                <div className="flex flex-col items-center justify-center py-24 text-[var(--text-secondary)] text-center">
+                                    <div className="w-24 h-24 rounded-3xl bg-[var(--accent-glow)] flex items-center justify-center mb-8 border border-[var(--border-color)]">
+                                        <Zap size={48} className="text-[var(--accent-primary)] opacity-50" />
+                                    </div>
+                                    <h2 className="text-2xl font-black text-[var(--text-primary)] tracking-tight mb-2">Ready to Query</h2>
+                                    <p className="text-sm max-w-md mx-auto opacity-70 leading-relaxed font-medium capitalize font-mono">
+                                        Ask me anything about your database datasets at the bottom.
+                                    </p>
                                 </div>
+                            )}
 
-                                <div className="w-full">
-                                    <DataTable columns={result.columns} rows={result.rows} />
-                                </div>
-                            </motion.div>
-                        )}
+                        </div>
+                    </main>
 
-                        {!result && !isThinking && !error && (
-                            <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-                                <LayoutDashboard size={48} className="mb-4 text-gray-200" />
-                                <p className="text-lg font-medium">No query results yet</p>
-                                <p className="text-sm">Ask a question above to see data visualization.</p>
-                            </div>
-                        )}
-
+                    {/* Chat Input: Fixed Bottom Section */}
+                    <div className="absolute bottom-0 left-0 right-0 p-8 pt-0 pointer-events-none z-50">
+                        <div className="max-w-4xl mx-auto w-full pointer-events-auto">
+                            <ChatInterface
+                                onSearch={handleSearch}
+                                isThinking={isThinking}
+                                initialQuery={initialPrompt}
+                            />
+                        </div>
                     </div>
-                </main>
+                </div>
             </div>
         </div>
     );

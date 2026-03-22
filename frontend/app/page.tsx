@@ -35,10 +35,10 @@ export default function HomePage() {
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.6, delay: 0.1 }}
-                        className="text-5xl md:text-7xl font-extrabold text-white tracking-tight leading-[1.1]"
+                        className="text-5xl md:text-7xl font-extrabold text-[var(--text-primary)] tracking-tight leading-[1.1]"
                     >
                         Ask Your Database. <br />
-                        <span className="bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 via-purple-400 to-cyan-400">
+                        <span className="bg-clip-text text-transparent bg-gradient-to-r from-indigo-500 via-purple-500 to-cyan-500">
                             Monitor Your Backend.
                         </span> <br />
                         Instantly.
@@ -48,7 +48,7 @@ export default function HomePage() {
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.6, delay: 0.2 }}
-                        className="text-lg md:text-xl text-slate-400 max-w-2xl mx-auto leading-relaxed"
+                        className="text-lg md:text-xl text-[var(--text-secondary)] max-w-2xl mx-auto leading-relaxed"
                     >
                         Querion enables secure conversational database queries and intelligent backend monitoring using state-of-the-art AI.
                     </motion.p>
@@ -65,7 +65,7 @@ export default function HomePage() {
                             </Button>
                         </Link>
                         <Link href="/landingpage">
-                            <Button variant="ghost" className="h-14 px-8 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 text-slate-300 font-bold text-base gap-2 transition-all duration-300">
+                            <Button variant="ghost" className="h-14 px-8 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-card)] hover:bg-[var(--border-color)] text-[var(--text-primary)] font-bold text-base gap-2 transition-all duration-300">
                                 Learn More <ArrowRight size={18} />
                             </Button>
                         </Link>
@@ -76,12 +76,12 @@ export default function HomePage() {
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         transition={{ duration: 0.6, delay: 0.5 }}
-                        className="flex flex-wrap items-center justify-center gap-6 pt-4 text-slate-500 text-xs"
+                        className="flex flex-wrap items-center justify-center gap-6 pt-4 text-[var(--text-secondary)] text-xs font-bold uppercase tracking-widest"
                     >
                         {[
-                            { icon: <Shield size={14} className="text-emerald-400" />, label: 'Enterprise Security' },
-                            { icon: <Zap size={14} className="text-yellow-400 fill-yellow-400" />, label: 'AI Powered' },
-                            { icon: <Activity size={14} className="text-cyan-400" />, label: 'Real-Time Monitoring' },
+                            { icon: <Shield size={14} className="text-emerald-500" />, label: 'Enterprise Security' },
+                            { icon: <Zap size={14} className="text-yellow-500 fill-yellow-500" />, label: 'AI Powered' },
+                            { icon: <Activity size={14} className="text-cyan-500" />, label: 'Real-Time Monitoring' },
                         ].map(b => (
                             <div key={b.label} className="flex items-center gap-2">
                                 {b.icon}
@@ -93,10 +93,11 @@ export default function HomePage() {
 
                 {/* Feature Cards */}
                 <motion.div
+                    id="features"
                     initial={{ opacity: 0, y: 40 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.7, delay: 0.4 }}
-                    className="max-w-6xl w-full mt-24"
+                    className="max-w-6xl w-full mt-24 scroll-mt-24"
                 >
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         {/* Card 1: Database Interaction */}
@@ -154,8 +155,8 @@ function FeatureCard({ title, description, icon, link, buttonText, visual }: any
                 {icon}
             </div>
 
-            <h3 className="text-xl font-bold text-white mb-3 tracking-tight">{title}</h3>
-            <p className="text-slate-400 text-sm leading-relaxed mb-8 flex-1">
+            <h3 className="text-xl font-bold text-[var(--text-primary)] mb-3 tracking-tight">{title}</h3>
+            <p className="text-[var(--text-secondary)] text-sm leading-relaxed mb-8 flex-1">
                 {description}
             </p>
 
@@ -164,7 +165,7 @@ function FeatureCard({ title, description, icon, link, buttonText, visual }: any
             </div>
 
             <Link href={link}>
-                <Button className="w-full h-12 rounded-xl bg-white/5 hover:bg-white/10 text-white border border-white/10 group-hover:border-indigo-500/30 group-hover:text-cyan-400 transition-all duration-300 font-semibold gap-2">
+                <Button className="w-full h-12 rounded-xl bg-[var(--bg-main)] hover:bg-[var(--accent-glow)] text-[var(--text-primary)] border border-[var(--border-color)] group-hover:border-[var(--accent-primary)]/30 group-hover:text-[var(--accent-primary)] transition-all duration-300 font-bold gap-2">
                     {buttonText} <ArrowRight className="h-4 w-4" />
                 </Button>
             </Link>

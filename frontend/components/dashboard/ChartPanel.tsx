@@ -123,6 +123,8 @@ export const ChartPanel = ({ data, columns, initialChartType = 'bar' }: ChartPan
 
     const { xKey, yKeys, processedData, isCounting } = chartConfig;
 
+    const idPrefix = React.useId().replace(/:/g, '');
+
     return (
         <Card className="h-full border border-white/5 bg-[#0b101d] shadow-2xl overflow-hidden flex flex-col rounded-2xl">
             <CardHeader className="flex flex-row items-center justify-between pb-4 border-b border-white/5 px-6 py-5">
@@ -258,7 +260,7 @@ export const ChartPanel = ({ data, columns, initialChartType = 'bar' }: ChartPan
                         <RechartsAreaChart data={processedData} margin={{ bottom: 20 }}>
                             <defs>
                                 {COLORS.map((color, i) => (
-                                    <linearGradient key={`grad-${i}`} id={`color-${i}`} x1="0" y1="0" x2="0" y2="1">
+                                    <linearGradient key={`grad-${i}`} id={`${idPrefix}-color-${i}`} x1="0" y1="0" x2="0" y2="1">
                                         <stop offset="5%" stopColor={color} stopOpacity={0.4} />
                                         <stop offset="95%" stopColor={color} stopOpacity={0} />
                                     </linearGradient>
@@ -286,7 +288,7 @@ export const ChartPanel = ({ data, columns, initialChartType = 'bar' }: ChartPan
                             />
                             <Legend iconType="circle" wrapperStyle={{ paddingTop: '30px' }} />
                             {yKeys.map((key, i) => (
-                                <Area key={key} type="monotone" dataKey={key} stroke={COLORS[i % COLORS.length]} fillOpacity={1} fill={`url(#color-${i % COLORS.length})`} strokeWidth={4} />
+                                <Area key={key} type="monotone" dataKey={key} stroke={COLORS[i % COLORS.length]} fillOpacity={1} fill={`url(#${idPrefix}-color-${i % COLORS.length})`} strokeWidth={4} />
                             ))}
                         </RechartsAreaChart>
                     )}
