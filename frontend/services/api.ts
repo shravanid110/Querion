@@ -56,7 +56,9 @@ export const saveConnection = async (params: ConnectionParams) => {
 };
 
 export const getConnections = async () => {
-    const response = await api.get('/connections');
+    const { data: authData } = await supabase.auth.getUser();
+    const userId = authData?.user?.id || 'default_user';
+    const response = await api.get(`/connections?user_id=${userId}`);
     return response.data;
 };
 
@@ -92,7 +94,14 @@ export const getHistory = async () => {
 };
 
 export const getMultidbConnections = async () => {
-    const response = await api.get('/multidb');
+    const { data: authData } = await supabase.auth.getUser();
+    const userId = authData?.user?.id || 'default_user';
+    const response = await api.get(`/multidb?user_id=${userId}`);
+    return response.data;
+};
+
+export const saveMultidbConnection = async (params: any) => {
+    const response = await api.post('/multidb/save', params);
     return response.data;
 };
 

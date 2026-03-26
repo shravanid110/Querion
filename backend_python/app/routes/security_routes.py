@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Body
 import httpx
 from urllib.parse import urlparse
 import re
+from app.services.url_service import UrlService
 
 router = APIRouter()
 
@@ -160,3 +161,58 @@ async def scan_url(url: str = Body(..., embed=True)):
 
     except Exception as e:
         raise HTTPException(status_code=400, detail='Invalid URL provided')
+@router.post("/scan-content")
+async def scan_content(content: str = Body(...), filename: str = Body(...), type: str = Body(...)):
+    if not content:
+        raise HTTPException(status_code=400, detail='Content is required')
+
+    issues = []
+    score = 100
+
+    # Script/SQL Injection
+    for pattern in MALICIOUS_PATTERNS:
+        if pattern.search(content):
+            issues.append(f"Detected malicious pattern: {pattern.pattern}")
+            score -= 30
+
+    # Harmful Keywords
+    for keyword in HARMFUL_KEYWORDS:
+        if keyword.lower() in content.lower():
+            issues.append(f"Detected prohibited keyword: {keyword}")
+            score -= 20
+
+    # CSV/JSON specific checks
+    if type == 'csv':
+        lines = content.split('\n')
+        formula_injections = 0
+        for line in lines[:100]:
+            cells = line.split(',')
+            for cell in cells:
+                trimmed = cell.strip()
+                if any(trimmed.startswith(p) for p in CSV_INJECTION_PREFIXES) and len(trimmed) > 1:
+                    formula_injections += 1
+        
+        if formula_injections > 0:
+            issues.append(f"Detected potential CSV formula injection.")
+            score -= 25
+
+    # Assessment
+    score = max(0, score)
+    risk_level = "Low" if score > 80 else "Medium" if score > 40 else "High"
+    status = "safe" if score > 60 else "blocked"
+
+    # Connect to UrlService if safe
+    connection_id = None
+    if status == "safe":
+        session = await UrlService.connect_content(content, filename, type)
+        connection_id = session["id"]
+
+    return {
+        "status": status,
+        "score": score,
+        "issues": issues,
+        "domain": "Local Upload",
+        "fileSize": round(len(content) / 1024),
+        "riskLevel": risk_level,
+        "connectionId": connection_id
+    }

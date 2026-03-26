@@ -10,9 +10,11 @@ import { toast, Toaster } from 'react-hot-toast';
 import axios from 'axios';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { Navbar } from '@/components/layout/Navbar';
+import { supabase } from '@/lib/supabaseClient';
 
-// Use 127.0.0.1 for IP-based resolution (avoid localhost issues)
-const API_BASE = "http://127.0.0.1:4001/api";
+// Main backend on port 4000
+const API_BASE = "http://127.0.0.1:4000/api";
+const SCHEDULE_API_BASE = "http://127.0.0.1:4000/api";
 
 export default function SchedulePage() {
     const [databases, setDatabases] = useState<any[]>([]);
@@ -27,17 +29,91 @@ export default function SchedulePage() {
 
     const fetchDbs = async () => {
         setIsLoadingDbs(true);
-        console.log("Fetching databases from:", `${API_BASE}/databases`);
         try {
-            const res = await axios.get(`${API_BASE}/databases`);
-            console.log("Databases loaded:", res.data);
-            setDatabases(res.data);
-            if (res.data.length === 0) {
-                toast("No databases found. Connect one first!");
+            // Get current user to filter connections
+            const { data: authData } = await supabase.auth.getUser();
+            const userId = authData?.user?.id || 'default_user';
+
+            console.log("Fetching connections for user:", userId);
+            
+            // Fetch from both connection tables using userId to ensure we see the right ones
+            const [multiRes, mysqlRes] = await Promise.allSettled([
+                axios.get(`${API_BASE}/multidb?user_id=${userId}`),
+                axios.get(`${API_BASE}/connections?user_id=${userId}`),
+            ]);
+
+            const multiDbs = multiRes.status === 'fulfilled' ? (multiRes.value.data || []) : [];
+            const mysqlDbs = mysqlRes.status === 'fulfilled' ? (mysqlRes.value.data || []) : [];
+
+            // Normalize both to a common shape
+            const allConnections = [
+                ...multiDbs.map((c: any) => ({
+                    id: c.id,
+                    name: c.name || `${c.dbType} @ ${c.host || 'cloud'}`,
+                    host: c.host || '',
+                    database: c.database || '',
+                    dbType: c.dbType || 'SQL',
+                    status: 'active',
+                    createdAt: c.createdAt || '',
+                })),
+                ...mysqlDbs.map((c: any) => ({
+                    id: c.id,
+                    name: c.name || `MySQL @ ${c.host}`,
+                    host: c.host || '',
+                    database: c.database || '',
+                    dbType: 'MySQL',
+                    status: 'active',
+                    createdAt: c.createdAt || '',
+                })),
+            ];
+
+            // Deduplicate by ID to ensure React keys are unique
+            const seen = new Map<string, any>();
+            for (const conn of allConnections) {
+                if (conn.id) {
+                    seen.set(conn.id, conn);
+                }
             }
+
+            const normalized = Array.from(seen.values());
+            console.log("Schedule databases loaded:", normalized);
+            setDatabases(normalized);
+
+            if (normalized.length === 0) {
+                toast("No databases found. Connect one in Database Selection first!");
+            }
+
+            // ── Sync to Supabase "Schedule database" table ──────────────────────
+            // Upsert so repeated page visits don't create duplicates
+            if (normalized.length > 0) {
+                try {
+                    const rows = normalized.map((db: any) => ({
+                        connection_id:   db.id,
+                        connection_name: db.name,
+                        host:            db.host || null,
+                        database_name:   db.database || null,
+                        db_type:         db.dbType || 'MySQL',
+                        status:          'active',
+                        synced_at:       new Date().toISOString(),
+                    }));
+
+                    const { error: upsertErr } = await supabase
+                        .from('Schedule database')
+                        .upsert(rows, { onConflict: 'connection_id', ignoreDuplicates: false });
+
+                    if (upsertErr) {
+                        console.warn("Supabase sync warning:", upsertErr.message);
+                    } else {
+                        console.log(`✅ Synced ${rows.length} connections → Supabase Schedule database`);
+                    }
+                } catch (syncErr) {
+                    console.warn("Supabase sync skipped:", syncErr);
+                }
+            }
+
         } catch (err: any) {
             console.error("Failed to fetch databases:", err);
-            toast.error("Could not load databases. Make sure the backend scheduler is running on port 4001.");
+            toast.error("Could not load databases from the main backend.");
         } finally {
             setIsLoadingDbs(false);
         }
@@ -87,27 +163,45 @@ export default function SchedulePage() {
         }
         setErrorMsg("");
         setIsSubmitting(true);
+
+        const selectedDbInfo = databases.find(d => d.id === selectedDb);
+        const scheduledAt = new Date(`${date}T${time}:00`).toISOString();
         
         try {
-            await axios.post(`${API_BASE}/schedule`, {
-                database_id: selectedDb,
-                prompt,
-                scheduled_datetime: `${date}T${time}:00`,
-                email
+            // 1. Trigger backend scheduler on port 4001 (The actual logic that sends emails)
+            await axios.post(`${SCHEDULE_API_BASE}/schedule`, {
+                database_id:        selectedDb,
+                prompt:             prompt,
+                scheduled_datetime: scheduledAt,
+                email:              email
             });
-            toast.success("Query scheduled successfully!");
+
+            // 2. Save to Supabase Schedule database table
+            const { data: authData } = await supabase.auth.getUser();
+            const userId = authData?.user?.id || null;
+
+            await supabase.from('Schedule database').insert([{
+                connection_id:   selectedDb,
+                connection_name: selectedDbInfo?.name || "Target Connection",
+                prompt:          prompt,
+                email:           email,
+                created_at:      scheduledAt,
+                synced_at:       new Date().toISOString()
+            }]);
+
+            toast.success("Query scheduled and saved to Schedule database!");
             // Reset form
             setPrompt(""); setDate(""); setTime(""); setEmail(""); setSelectedDb("");
         } catch (err: any) {
             console.error("Schedule failed:", err);
-            toast.error(err.response?.data?.detail || "Failed to schedule prompt");
+            toast.error(err.response?.data?.detail || err?.message || "Failed to schedule prompt");
         } finally {
             setIsSubmitting(false);
         }
     };
 
     return (
-        <div className="min-h-screen bg-[#020617] text-white flex flex-col font-sans">
+        <div className="min-h-screen bg-[var(--bg-main)] text-[var(--text-primary)] flex flex-col font-sans">
             {/* Inject Bootstrap 5 and Icons CDN */}
             <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
             <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" />
@@ -125,25 +219,25 @@ export default function SchedulePage() {
                 }
                 
                 aside a:hover, nav a:hover {
-                    color: white !important;
+                    color: inherit !important;
                     text-decoration: none !important;
                 }
 
                 /* SCOPED BOOTSTRAP FORM STYLES */
                 .bootstrap-scope .form-control, .bootstrap-scope .form-select {
-                    background-color: rgba(255, 255, 255, 0.05) !important;
-                    border: 1px solid rgba(255, 255, 255, 0.1) !important;
-                    color: white !important;
+                    background-color: var(--bg-nav, rgba(255, 255, 255, 0.05)) !important;
+                    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1)) !important;
+                    color: var(--text-primary, white) !important;
                     border-radius: 12px !important;
                     padding: 0.85rem 1.4rem !important;
                 }
                 .bootstrap-scope .form-control:focus, .bootstrap-scope .form-select:focus {
-                    background-color: rgba(255, 255, 255, 0.08) !important;
+                    background-color: var(--bg-card, rgba(255, 255, 255, 0.08)) !important;
                     border-color: #6366f1 !important;
                     box-shadow: 0 0 10px rgba(99, 102, 241, 0.3) !important;
                 }
                 .bootstrap-scope .form-label {
-                    color: #cbd5e1 !important;
+                    color: var(--text-secondary, #cbd5e1) !important;
                     font-size: 0.8rem !important;
                     font-weight: 700 !important;
                     text-transform: uppercase !important;
@@ -153,8 +247,8 @@ export default function SchedulePage() {
                     align-items: center;
                 }
                 .bootstrap-scope .card {
-                    background-color: #0f172a !important;
-                    border: 1px solid rgba(255, 255, 255, 0.05) !important;
+                    background-color: var(--bg-card, #0f172a) !important;
+                    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.05)) !important;
                     backdrop-filter: blur(20px);
                 }
                 .bootstrap-scope .btn-primary {
@@ -165,9 +259,14 @@ export default function SchedulePage() {
                     font-weight: 800 !important;
                     font-size: 1rem !important;
                     letter-spacing: 0.5px !important;
+                    color: white !important;
                 }
                 .bootstrap-scope .btn-primary:disabled {
                     opacity: 0.6;
+                }
+                html[data-theme*="light"] .bootstrap-scope input[type="date"]::-webkit-calendar-picker-indicator,
+                html[data-theme*="light"] .bootstrap-scope input[type="time"]::-webkit-calendar-picker-indicator {
+                    filter: invert(0);
                 }
                 .bootstrap-scope input[type="date"]::-webkit-calendar-picker-indicator,
                 .bootstrap-scope input[type="time"]::-webkit-calendar-picker-indicator {
@@ -175,8 +274,8 @@ export default function SchedulePage() {
                     cursor: pointer;
                 }
                 .bootstrap-scope select option {
-                    background-color: #1e293b;
-                    color: white;
+                    background-color: var(--bg-main, #1e293b);
+                    color: var(--text-primary, white);
                 }
             `}</style>
             
@@ -196,12 +295,12 @@ export default function SchedulePage() {
                                         <div className="badge bg-primary bg-opacity-10 text-primary mb-2 px-3 py-2 rounded-pill uppercase fw-bold tracking-wider" style={{fontSize: '0.65rem'}}>
                                             <i className="bi bi-clock-history me-2"></i>Automated Tasks
                                         </div>
-                                        <h1 className="display-4 fw-black tracking-tight text-white mb-2">
+                                        <h1 className="display-4 fw-black tracking-tight text-[var(--text-primary)] mb-2">
                                             Schedule <span className="text-primary italic">Intelligence</span>
                                         </h1>
-                                        <p className="text-secondary opacity-75 mb-0">Define timing and delivery metadata for automated SQL insights.</p>
+                                        <p className="text-[var(--text-secondary)] opacity-75 mb-0">Define timing and delivery metadata for automated SQL insights.</p>
                                     </div>
-                                    <Link href="/dashboard" className="btn btn-dark bg-white bg-opacity-5 hover-bg-opacity-10 rounded-4 px-4 py-2 border-0" style={{textDecoration: 'none'}}>
+                                    <Link href="/dashboard" className="btn btn-dark bg-opacity-5 hover-bg-opacity-10 rounded-4 px-4 py-2 border-0" style={{textDecoration: 'none', backgroundColor: 'var(--bg-nav)', color: 'var(--text-primary)'}}>
                                         <i className="bi bi-arrow-left me-2"></i> Back
                                     </Link>
                                 </div>
@@ -352,8 +451,59 @@ export default function SchedulePage() {
                                     </div>
                                 </motion.div>
 
+                                <motion.div animate={{ opacity: 1, y: 0 }} initial={{ opacity: 0, y: 15 }} className="mt-5">
+                                    <div className="card shadow-2xl rounded-5 p-4 border-top border-4 border-info">
+                                        <h4 className="fw-black mb-4 text-[var(--text-primary)]">
+                                            <i className="bi bi-table me-2 text-info"></i> Schedule Datatable
+                                        </h4>
+                                        <div className="table-responsive">
+                                            <table className="table table-borderless table-hover align-middle mb-0" style={{color: 'var(--text-primary)'}}>
+                                                <thead style={{borderBottom: '1px solid var(--border-color)'}}>
+                                                    <tr>
+                                                        <th className="text-uppercase tracking-widest text-[var(--text-secondary)]" style={{fontSize: '11px', fontWeight: 800}}>Connection Name</th>
+                                                        <th className="text-uppercase tracking-widest text-[var(--text-secondary)]" style={{fontSize: '11px', fontWeight: 800}}>Host</th>
+                                                        <th className="text-uppercase tracking-widest text-[var(--text-secondary)]" style={{fontSize: '11px', fontWeight: 800}}>Type</th>
+                                                        <th className="text-uppercase tracking-widest text-[var(--text-secondary)] text-end" style={{fontSize: '11px', fontWeight: 800}}>Status</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {isLoadingDbs ? (
+                                                        <tr>
+                                                            <td colSpan={4} className="text-center py-5">
+                                                                <Loader2 className="animate-spin text-primary mx-auto mb-2" size={24} />
+                                                                <span className="text-[var(--text-secondary)] small fw-bold tracking-widest text-uppercase">Loading Connected Resources...</span>
+                                                            </td>
+                                                        </tr>
+                                                    ) : databases.length === 0 ? (
+                                                        <tr>
+                                                            <td colSpan={4} className="text-center py-5 text-[var(--text-secondary)]">No connection data found in multidb.</td>
+                                                        </tr>
+                                                    ) : (
+                                                        databases.map((db, idx) => (
+                                                            <tr key={db.id || idx} style={{borderBottom: '1px solid var(--border-color)'}}>
+                                                                <td className="py-3"><div className="fw-bold">{db.name}</div></td>
+                                                                <td className="py-3"><div className="text-[var(--text-secondary)] font-mono small">{db.host || 'Cloud Endpoint'}</div></td>
+                                                                <td className="py-3">
+                                                                    <span className="badge bg-primary bg-opacity-10 text-primary rounded-pill px-3 py-1">
+                                                                        {db.dbType || 'SQL'}
+                                                                    </span>
+                                                                </td>
+                                                                <td className="py-3 text-end">
+                                                                    <span className="badge bg-success bg-opacity-10 text-success rounded-pill px-3 py-1">
+                                                                        <i className="bi bi-check-circle-fill me-1"></i> Connected
+                                                                    </span>
+                                                                </td>
+                                                            </tr>
+                                                        ))
+                                                    )}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </motion.div>
+
                                 <div className="mt-5 text-center">
-                                    <div className="d-inline-flex gap-4 opacity-30 text-[9px] uppercase tracking-[0.4em] font-bold text-slate-400">
+                                    <div className="d-inline-flex gap-4 opacity-30 text-[9px] uppercase tracking-[0.4em] font-bold text-[var(--text-secondary)]">
                                         <span>SMTP Validated</span>
                                         <span className="text-primary">•</span>
                                         <span>AES-256 Meta</span>

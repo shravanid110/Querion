@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
-import { testConnection, saveConnection, getConnections, verifyMasterPassword } from '@/services/api';
+import { testConnection, saveConnection, getConnections, verifyMasterPassword, saveMultidbConnection, getMultidbConnections } from '@/services/api';
 import { cn } from '@/lib/utils';
 import axios from 'axios';
 import { supabase } from '@/lib/supabaseClient';
@@ -44,11 +44,24 @@ export const DatabaseConnectionForm = ({ dbType, onClose }: DatabaseConnectionFo
     useEffect(() => {
         const fetchConnections = async () => {
             try {
-                // If this fails with 403, it's fine, we just won't show the saved list
-                const conns = await getConnections();
-                setSavedConnections(conns || []);
+                // Fetch from both standard and multidb tables to ensure user sees everything
+                const [standardData, multiData] = await Promise.all([
+                    getConnections(),
+                    getMultidbConnections()
+                ]);
+                
+                // Normalize both into a single list
+                const normalizedStandard = (standardData || []).map((c: any) => ({ ...c, isMultidb: false }));
+                const normalizedMulti = (multiData || []).map((c: any) => ({
+                    ...c,
+                    isMultidb: true,
+                    // multiData often has host/database as optional, ensure they are present for display
+                    host: c.host || 'Cloud Endpoint',
+                }));
+                
+                setSavedConnections([...normalizedStandard, ...normalizedMulti]);
             } catch (err) {
-                console.warn("Failed to fetch connections (user might be logged out)", err);
+                console.warn("Failed to fetch connections", err);
                 setSavedConnections([]);
             }
         };
@@ -114,19 +127,21 @@ export const DatabaseConnectionForm = ({ dbType, onClose }: DatabaseConnectionFo
             const { data: authData } = await supabase.auth.getUser();
             const userId = authData?.user?.id || 'default_user';
 
-            const response = await saveConnection({
+            const response = await saveMultidbConnection({
                 ...formData,
+                dbType: dbType?.toLowerCase() || 'mysql',
                 port: Number(formData.port),
                 master_password: formData.masterPassword,
                 user_id: userId,
             } as any);
 
             // Double write to Supabase directly as requested, so it shows up in their Supabase dashboard
-            if (response && response.id && authData?.user?.id) {
+            if (response && response.id) {
                 try {
-                    const { error } = await supabase.from('connections').insert([{
+                    const { error } = await supabase.from('multidb_connections').insert([{
                         id: response.id,
-                        user_id: authData.user.id,
+                        user_id: userId,
+                        db_type: dbType?.toLowerCase() || 'mysql',
                         name: formData.name || 'Connection',
                         host: formData.host,
                         port: Number(formData.port),
@@ -134,7 +149,11 @@ export const DatabaseConnectionForm = ({ dbType, onClose }: DatabaseConnectionFo
                         username: formData.username,
                         password: 'ENCRYPTED_BY_BACKEND'
                     }]);
-                    if (error) console.error("Supabase insert error:", error);
+                    if (error) {
+                        console.error("Supabase insert error:", error);
+                    } else {
+                        console.log("Successfully dual-wrote to Supabase multidb_connections");
+                    }
                 } catch(e) {
                     console.error("Failed to dual-write to Supabase:", e);
                 }

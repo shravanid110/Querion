@@ -52,6 +52,19 @@ class QueryHistory(Base):
     metrics = Column(Text) # JSON string
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
+class ScheduledPrompt(Base):
+    __tablename__ = "scheduled_prompts"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    database_id = Column(String(36), nullable=False)
+    db_type = Column(String(50), nullable=False)
+    prompt = Column(Text, nullable=False)
+    scheduled_datetime = Column(DateTime, nullable=False)
+    email = Column(String(255), nullable=False)
+    status = Column(String(20), default="pending") # "pending", "notified", "executed"
+    token = Column(String(100), unique=True) # Secure link token
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
 from sqlalchemy.pool import NullPool
 
 engine_args = {"pool_pre_ping": True}

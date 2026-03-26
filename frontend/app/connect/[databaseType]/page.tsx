@@ -138,24 +138,26 @@ export default function ConnectDatabasePage({ params }: { params: Promise<{ data
 
             if (res.data.id) {
                 // Dual write to Supabase directly so it shows up in their Supabase console
-                if (authData?.user?.id) {
-                    try {
-                        const { error } = await supabase.from('multidb_connections').insert([{
-                            id: res.data.id,
-                            user_id: authData.user.id,
-                            db_type: dbType,
-                            name: formData.name || `${dbInfo.name} Connection`,
-                            host: formData.host || null,
-                            port: Number(formData.port) || null,
-                            database: formData.database || null,
-                            username: formData.username || null,
-                            password: 'ENCRYPTED_BY_BACKEND',
-                            uri: (formData as any).serviceAccountJson || formData.uri || null
-                        }]);
-                        if (error) console.error("Supabase insert error:", error);
-                    } catch(e) {
-                        console.error("Failed to dual-write to Supabase:", e);
+                try {
+                    const { error } = await supabase.from('multidb_connections').insert([{
+                        id: res.data.id,
+                        user_id: userId,
+                        db_type: dbType,
+                        name: formData.name || `${dbInfo.name} Connection`,
+                        host: formData.host || null,
+                        port: Number(formData.port) || null,
+                        database: formData.database || null,
+                        username: formData.username || null,
+                        password: 'ENCRYPTED_BY_BACKEND',
+                        uri: (formData as any).serviceAccountJson || formData.uri || null
+                    }]);
+                    if (error) {
+                        console.error("Supabase insert error:", error);
+                    } else {
+                        console.log("Successfully dual-wrote to Supabase multidb_connections");
                     }
+                } catch(e) {
+                    console.error("Failed to dual-write to Supabase:", e);
                 }
 
                 // Store for dashboard

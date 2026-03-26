@@ -12,8 +12,11 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { LayoutDashboard, Users, DollarSign, Calendar, Database, AlertCircle, Copy, Zap, Code, Plus, FileDown, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { runQuery, generateReport } from '@/services/api';
+import { runQuery, generateReport, runMultidbQuery } from '@/services/api';
 import { supabase } from '@/lib/supabaseClient';
+import axios from 'axios';
+
+const API_BASE = "http://127.0.0.1:4000/api";
 
 export default function DashboardPage() {
     const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(() => {
@@ -25,13 +28,20 @@ export default function DashboardPage() {
         return null;
     });
 
+    const [isMultidb, setIsMultidb] = useState<boolean>(() => {
+        if (typeof window !== 'undefined') return localStorage.getItem('last_connection_is_multidb') === 'true';
+        return false;
+    });
+
     // Update localStorage when selection changes
-    const updateSelectedConnection = (id: string, name: string) => {
-        if (selectedConnectionId === id && selectedConnectionName === name) return;
+    const updateSelectedConnection = (id: string, name: string, isMulti: boolean = false) => {
+        if (selectedConnectionId === id && selectedConnectionName === name && isMultidb === isMulti) return;
         setSelectedConnectionId(id);
         setSelectedConnectionName(name);
+        setIsMultidb(isMulti);
         localStorage.setItem('last_connection_id', id);
         localStorage.setItem('last_connection_name', name);
+        localStorage.setItem('last_connection_is_multidb', String(isMulti));
     };
     const [results, setResults] = useState<{ prompt: string, data: QueryResult }[]>(() => {
         if (typeof window !== 'undefined') {
@@ -144,13 +154,48 @@ export default function DashboardPage() {
         if (typeof window !== 'undefined') {
             const params = new URLSearchParams(window.location.search);
             const promptParam = params.get('prompt');
+            const tokenParam = params.get('token');
+            
             if (promptParam) {
                 setInitialPrompt(promptParam);
-                // Clean the URL without reloading the page
+                window.history.replaceState({}, '', '/dashboard');
+            } else if (tokenParam) {
+                handleTokenExecution(tokenParam);
                 window.history.replaceState({}, '', '/dashboard');
             }
         }
     }, []);
+
+    const handleTokenExecution = async (token: string) => {
+        try {
+            // 1. Verify token exists and get metadata
+            const { data: task } = await axios.get(`${API_BASE}/verify-token/${token}`);
+            
+            // 2. Ask user for password for the specific DB
+            const dbPassword = prompt(`Your scheduled prompt: "${task.prompt}"\n\nPlease enter your database password for "${task.database_name}" to proceed:`);
+            
+            if (!dbPassword) return;
+
+            // 3. Verify in backend (Secure Execution)
+            const { data: verifyRes } = await axios.post(`${API_BASE}/execute-verify`, {
+                token,
+                db_password: dbPassword
+            });
+
+            if (verifyRes.success) {
+                // 4. Set connection and prompt
+                updateSelectedConnection(task.database_id, task.database_name, task.db_type !== 'mysql');
+                setInitialPrompt(task.prompt);
+                
+                // Note: The second useEffect will trigger runOnce selectedConnection changes
+            } else {
+                alert(verifyRes.error || "Execution failed.");
+            }
+        } catch (err: any) {
+            console.error("Token verification failed", err);
+            alert(err.response?.data?.detail || "Invalid or expired link token.");
+        }
+    };
 
     // Try to auto-run the pre-filled prompt if we get a connection
     useEffect(() => {
@@ -177,7 +222,9 @@ export default function DashboardPage() {
             const { sid, hash } = await getOrGenerateSession();
 
             // Run exactly as it is but attaching the hash header for terminal printing
-            const data = await runQuery(selectedConnectionId, prompt, hash);
+            const data = isMultidb 
+                ? await runMultidbQuery(selectedConnectionId, prompt, hash)
+                : await runQuery(selectedConnectionId, prompt, hash);
 
             // Dual-write native history to Supabase
             try {
@@ -290,7 +337,7 @@ export default function DashboardPage() {
                                 </div>
                                 <ConnectionSelector 
                                     onSelect={(conn) => {
-                                        updateSelectedConnection(conn.id, conn.name);
+                                        updateSelectedConnection(conn.id, conn.name, !!conn.isMultidb);
                                     }} 
                                     selectedId={selectedConnectionId}
                                 />

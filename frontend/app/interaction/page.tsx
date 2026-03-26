@@ -8,7 +8,7 @@ import { ChartPanel } from '@/components/dashboard/ChartPanel'; // Reusing
 import { DataTable } from '@/components/dashboard/DataTable';   // Reusing
 import { runUrlQuery, api } from '@/services/api';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { Loader2, LayoutDashboard, FileText, Globe, Download, PieChart, BarChart2 } from 'lucide-react';
+import { Loader2, LayoutDashboard, FileText, Globe, Download, PieChart, BarChart2, Database } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -314,11 +314,11 @@ export default function InteractionPage() {
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[calc(100vh-180px)]">
+                        <div className="flex flex-col gap-8">
 
-                            {/* Left Column: Charts/Data (if available) or Summary items */}
-                            {hasStructuredData ? (
-                                <div className="lg:col-span-2 space-y-6 overflow-y-auto pr-2 custom-scrollbar">
+                            {/* Visualization Section: Full Width */}
+                            {hasStructuredData && (
+                                <div className="w-full space-y-6">
                                     <motion.div
                                         initial={{ opacity: 0, y: 20 }}
                                         animate={{ opacity: 1, y: 0 }}
@@ -327,61 +327,52 @@ export default function InteractionPage() {
                                         <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
                                             <LayoutDashboard size={20} className="text-indigo-500" />
                                             Data Visualization
-                                        </h3>
-                                        <div className="h-[350px]" ref={chartRef}>
+                                        </h3>                                        <div className="h-[500px]" ref={chartRef}>
                                             <ChartPanel
                                                 data={sessionData.structuredData}
                                                 columns={sessionData.columns || []}
                                             />
                                         </div>
                                     </motion.div>
-
-                                    <motion.div
-                                        initial={{ opacity: 0, y: 20 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        transition={{ delay: 0.1 }}
-                                        className="bg-white p-6 rounded-xl shadow-sm border border-gray-100"
-                                    >
-                                        <h3 className="text-lg font-semibold text-gray-800 mb-4">Raw Data Preview</h3>
-                                        <div className="overflow-x-auto">
-                                            <DataTable
-                                                columns={sessionData.columns || []}
-                                                rows={sessionData.structuredData.slice(0, 10)}
-                                            />
-                                            <p className="text-xs text-gray-400 mt-2 text-center">Showing first 10 rows</p>
-                                        </div>
-                                    </motion.div>
-                                </div>
-                            ) : (
-                                // If unstructured (HTML/Text), maybe show summary or just center the chat?
-                                // Let's make the chat take full width but maybe centered context
-                                <div className="hidden lg:block lg:col-span-1 space-y-4">
-                                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 h-full">
-                                        <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                                            <FileText size={20} className="text-blue-500" />
-                                            Source Content
-                                        </h3>
-                                        <div className="text-sm text-gray-600 space-y-2 h-[500px] overflow-y-auto pr-2 custom-scrollbar">
-                                            <p className="italic text-gray-400">Content preview (truncated):</p>
-                                            <p className="whitespace-pre-wrap font-mono text-xs text-gray-500 bg-gray-50 p-2 rounded">
-                                                {/* We don't have rawContent in GET /session response to save bandwidth, 
-                                                     but we could add a summary if AI generated one. For now, placeholder. */}
-                                                No summary available yet. Ask the AI to summarize!
-                                            </p>
-                                        </div>
-                                    </div>
                                 </div>
                             )}
 
-                            {/* Right Column: Chat Interface */}
-                            <div className={hasStructuredData ? "lg:col-span-1" : "lg:col-span-2 lg:col-start-2"}>
+                            {/* Chat Interface: Full Width */}
+                            <div className="w-full">
                                 <UrlChatInterface
                                     messages={messages}
                                     onSend={handleSendMessage}
                                     loading={loading}
-                                    className="h-full min-h-[600px] shadow-xl border-indigo-100"
+                                    className="h-[700px] shadow-2xl border-indigo-100 bg-white/80 backdrop-blur-xl rounded-3xl"
                                 />
                             </div>
+
+                            {/* Raw Data Preview: Full Width */}
+                            {hasStructuredData && (
+                                <div className="w-full">
+                                    <motion.div
+                                        initial={{ opacity: 0, y: 20 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        transition={{ delay: 0.1 }}
+                                        className="bg-white p-8 rounded-3xl shadow-xl border border-gray-100"
+                                    >
+                                        <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
+                                            <div className="p-2 bg-indigo-50 rounded-xl text-indigo-600">
+                                                <Database size={20} />
+                                            </div>
+                                            Complete Dataset Preview
+                                        </h3>
+                                        <div className="overflow-x-auto custom-scrollbar">
+                                            <DataTable
+                                                columns={sessionData.columns || []}
+                                                rows={sessionData.structuredData.slice(0, 20)}
+                                            />
+                                            <p className="text-xs text-center text-gray-400 mt-6 font-medium uppercase tracking-widest">Showing Top 20 Records of {sessionData.structuredData.length}</p>
+                                        </div>
+                                    </motion.div>
+                                </div>
+                            )}
+
                         </div>
 
                     </div>

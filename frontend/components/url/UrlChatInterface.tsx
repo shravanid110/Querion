@@ -1,74 +1,147 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Send, User, Bot, Loader2 } from 'lucide-react';
+import { Send, User, Bot, Loader2, PieChart as PieChartIcon, BarChart as BarChartIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import {
-    BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
-    XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
-} from 'recharts';
+import * as echarts from 'echarts';
 
-const COLORS = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+const COLORS = ['#6366f1', '#10b981', '#f43f5e', '#8b5cf6', '#f59e0b', '#0ea5e9'];
+
+const EChartComponent = ({ option, height = 450 }: { option: any; height?: number }) => {
+    const chartRef = useRef<HTMLDivElement>(null);
+    const chartInstance = useRef<echarts.ECharts | null>(null);
+
+    useEffect(() => {
+        if (!chartRef.current) return;
+
+        // Initialize chart
+        chartInstance.current = echarts.init(chartRef.current);
+        chartInstance.current.setOption(option);
+
+        // Handle resizing
+        const handleResize = () => {
+            chartInstance.current?.resize();
+        };
+        window.addEventListener('resize', handleResize);
+
+        return () => {
+            window.removeEventListener('resize', handleResize);
+            chartInstance.current?.dispose();
+        };
+    }, [option]);
+
+    return <div ref={chartRef} style={{ width: '100%', height: `${height}px` }} />;
+};
 
 const renderChart = (chartData: any) => {
     if (!chartData || !chartData.data) return null;
 
-    const CommonTooltip = () => (
-        <Tooltip
-            contentStyle={{ backgroundColor: 'white', borderRadius: '8px', border: '1px solid #e5e7eb', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
-        />
-    );
+    let option: any = {
+        backgroundColor: 'transparent',
+        tooltip: {
+            trigger: 'axis',
+            backgroundColor: 'rgba(255, 255, 255, 0.95)',
+            borderRadius: 12,
+            padding: 15,
+            textStyle: { color: '#1f2937', fontSize: 13 },
+            shadowBlur: 10,
+            shadowColor: 'rgba(0,0,0,0.1)',
+            borderWidth: 0,
+            axisPointer: { type: 'shadow' }
+        },
+        grid: { top: '15%', left: '3%', right: '4%', bottom: '10%', containLabel: true },
+        xAxis: {
+            type: 'category',
+            data: chartData.data.map((d: any) => d.name),
+            axisLine: { show: false },
+            axisTick: { show: false },
+            axisLabel: { color: '#64748b', fontSize: 11, interval: 0, rotate: chartData.data.length > 8 ? 30 : 0 }
+        },
+        yAxis: {
+            type: 'value',
+            axisLine: { show: false },
+            axisTick: { show: false },
+            splitLine: { lineStyle: { type: 'dashed', color: '#f1f5f9' } },
+            axisLabel: { color: '#64748b', fontSize: 11 }
+        },
+        animationDuration: 1500,
+        animationEasing: 'cubicOut'
+    };
 
     switch (chartData.type) {
         case 'bar':
-            return (
-                <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={chartData.data}>
-                        <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                        <XAxis dataKey="name" fontSize={12} tickLine={false} axisLine={false} />
-                        <YAxis fontSize={12} tickLine={false} axisLine={false} />
-                        <CommonTooltip />
-                        <Legend />
-                        <Bar dataKey="value" fill="#4f46e5" radius={[4, 4, 0, 0]} name={chartData.yAxisLabel || 'Value'} />
-                    </BarChart>
-                </ResponsiveContainer>
-            );
+            option.series = [{
+                name: chartData.yAxisLabel || 'Value',
+                type: 'bar',
+                data: chartData.data.map((d: any) => d.value),
+                barWidth: '40%',
+                itemStyle: {
+                    borderRadius: [10, 10, 0, 0],
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        { offset: 0, color: '#6366f1' },
+                        { offset: 1, color: '#818cf8' }
+                    ])
+                },
+                emphasis: {
+                    itemStyle: {
+                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                            { offset: 0, color: '#4f46e5' },
+                            { offset: 1, color: '#6366f1' }
+                        ])
+                    }
+                }
+            }];
+            break;
         case 'line':
-            return (
-                <ResponsiveContainer width="100%" height={300}>
-                    <LineChart data={chartData.data}>
-                        <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                        <XAxis dataKey="name" fontSize={12} tickLine={false} axisLine={false} />
-                        <YAxis fontSize={12} tickLine={false} axisLine={false} />
-                        <CommonTooltip />
-                        <Legend />
-                        <Line type="monotone" dataKey="value" stroke="#4f46e5" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} name={chartData.yAxisLabel || 'Value'} />
-                    </LineChart>
-                </ResponsiveContainer>
-            );
+        case 'area':
+            option.xAxis.boundaryGap = false;
+            option.series = [{
+                name: chartData.yAxisLabel || 'Value',
+                type: 'line',
+                data: chartData.data.map((d: any) => d.value),
+                smooth: true,
+                symbol: 'circle',
+                symbolSize: 8,
+                lineStyle: { width: 4, color: '#8b5cf6' },
+                itemStyle: { color: '#8b5cf6', borderColor: '#fff', borderWidth: 2 },
+                areaStyle: {
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        { offset: 0, color: 'rgba(139, 92, 246, 0.4)' },
+                        { offset: 1, color: 'rgba(139, 92, 246, 0)' }
+                    ])
+                }
+            }];
+            break;
         case 'pie':
-            return (
-                <ResponsiveContainer width="100%" height={300}>
-                    <PieChart>
-                        <Pie
-                            data={chartData.data}
-                            cx="50%"
-                            cy="50%"
-                            innerRadius={60}
-                            outerRadius={80}
-                            paddingAngle={5}
-                            dataKey="value"
-                        >
-                            {chartData.data.map((entry: any, index: number) => (
-                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                            ))}
-                        </Pie>
-                        <CommonTooltip />
-                        <Legend />
-                    </PieChart>
-                </ResponsiveContainer>
-            );
+            option.xAxis = undefined;
+            option.yAxis = undefined;
+            option.series = [{
+                name: chartData.yAxisLabel || 'Value',
+                type: 'pie',
+                radius: ['45%', '75%'],
+                center: ['50%', '50%'],
+                avoidLabelOverlap: true,
+                itemStyle: {
+                    borderRadius: 12,
+                    borderColor: '#fff',
+                    borderWidth: 4
+                },
+                label: {
+                    show: true,
+                    position: 'outside',
+                    formatter: '{b}: {c}',
+                    color: '#64748b'
+                },
+                data: chartData.data.map((d: any, i: number) => ({
+                    name: d.name,
+                    value: d.value,
+                    itemStyle: { color: COLORS[i % COLORS.length] }
+                }))
+            }];
+            break;
         default:
             return <p className="text-gray-500 italic">Unsupported chart type</p>;
     }
+
+    return <EChartComponent option={option} />;
 };
 
 const MessageContent = ({ content }: { content: string }) => {
@@ -82,19 +155,45 @@ const MessageContent = ({ content }: { content: string }) => {
             cleanContent = cleanContent.replace(/^```/, '').replace(/```$/, '').trim();
         }
 
-        if (cleanContent.startsWith('{') && cleanContent.includes('"isChart": true')) {
-            const chartData = JSON.parse(cleanContent);
-            return (
-                <div className="w-full mt-2 mb-2">
-                    <p className="font-semibold text-gray-800 mb-2">{chartData.title}</p>
-                    <div className="w-full bg-white p-2 rounded-lg border border-gray-100 mb-2">
-                        {renderChart(chartData)}
+        const jsonStart = cleanContent.indexOf('{');
+        const jsonEnd = cleanContent.lastIndexOf('}');
+        
+        if (jsonStart !== -1 && jsonEnd !== -1 && cleanContent.includes('"isChart": true')) {
+            try {
+                const jsonString = cleanContent.substring(jsonStart, jsonEnd + 1);
+                let chartData = JSON.parse(jsonString);
+                
+                // Normalization Layer: Ensure data has name and value keys
+                if (chartData.data && Array.isArray(chartData.data)) {
+                    chartData.data = chartData.data.map((item: any) => ({
+                        name: item.name || item.label || item.category || item.group || Object.values(item)[0],
+                        value: Number(item.value || item.amount || item.count || item.total || Object.values(item)[1] || 0)
+                    }));
+                }
+                
+                return (
+                    <div className="w-full mt-4 mb-6 space-y-4">
+                        <div className="flex items-center gap-2 text-indigo-700 bg-indigo-50 px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider w-fit">
+                            <PieChartIcon size={14} /> Data Visualization: {chartData.title}
+                        </div>
+                        <div className="w-full bg-white/50 p-4 rounded-3xl border border-indigo-50 shadow-sm mb-4">
+                            {renderChart(chartData)}
+                        </div>
+                        
+                        <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-xl space-y-3">
+                            <div className="flex items-center gap-2 text-gray-800 font-bold text-sm">
+                                <Bot size={18} className="text-emerald-500" />
+                                Analytical Breakdown & Insights
+                            </div>
+                            <div className="text-gray-600 text-sm md:text-base leading-relaxed whitespace-pre-wrap">
+                                {chartData.explanation}
+                            </div>
+                        </div>
                     </div>
-                    <p className="text-sm text-gray-600 italic border-l-2 border-indigo-200 pl-2">
-                        AI Insight: {chartData.explanation}
-                    </p>
-                </div>
-            );
+                );
+            } catch (innerError) {
+                console.error("Deep JSON parse failed:", innerError);
+            }
         }
     } catch (e) {
         // Not valid JSON, ignore and render text
@@ -139,7 +238,7 @@ export const UrlChatInterface: React.FC<UrlChatInterfaceProps> = ({ messages, on
     };
 
     return (
-        <div className={`flex flex-col h-[600px] w-full bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden ${className}`}>
+        <div className={`flex flex-col h-full w-full bg-white rounded-3xl shadow-2xl border border-gray-100 overflow-hidden ${className}`}>
             <div
                 ref={scrollContainerRef}
                 className="flex-1 overflow-y-auto px-4 py-6 space-y-6 bg-gray-50/50"
@@ -153,8 +252,8 @@ export const UrlChatInterface: React.FC<UrlChatInterfaceProps> = ({ messages, on
                 )}
 
                 {messages.map((m, i) => (
-                    <div key={i} className={`flex w-full ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`flex items-end gap-3 max-w-[85%] md:max-w-[70%] ${m.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
+                    <div className={`flex w-full ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`flex items-end gap-4 max-w-[95%] w-full ${m.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
 
                             {/* Avatar */}
                             <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center shadow-sm 

@@ -68,11 +68,28 @@ export default function DatasetSecurityScanner() {
         setError(validateUrl(val));
     };
 
+    useEffect(() => {
+        const searchParams = new URLSearchParams(window.location.search);
+        if (searchParams.get('source') === 'json') {
+            const fileName = sessionStorage.getItem('pending_upload_name') || 'uploaded_file.json';
+            setUrl(fileName);
+            // Auto start scan for uploaded files
+            setTimeout(() => {
+                const btn = document.getElementById('initialize-scan-btn');
+                btn?.click();
+            }, 500);
+        }
+    }, [router]);
+
     const startScan = async () => {
-        const validationError = validateUrl(url);
-        if (validationError) {
-            setError(validationError);
-            return;
+        const isJsonUpload = new URLSearchParams(window.location.search).get('source') === 'json';
+        
+        if (!isJsonUpload) {
+            const validationError = validateUrl(url);
+            if (validationError) {
+                setError(validationError);
+                return;
+            }
         }
 
         setIsScanning(true);
@@ -88,8 +105,18 @@ export default function DatasetSecurityScanner() {
         }
 
         try {
-            const response = await axios.post('http://localhost:4000/api/security/scan-url', { url });
-            setResult(response.data);
+            if (isJsonUpload) {
+                const content = sessionStorage.getItem('pending_upload_json');
+                const response = await axios.post('http://localhost:4000/api/security/scan-content', { 
+                    content,
+                    filename: url,
+                    type: 'json'
+                });
+                setResult(response.data);
+            } else {
+                const response = await axios.post('http://localhost:4000/api/security/scan-url', { url });
+                setResult(response.data);
+            }
         } catch (err) {
             setError("Failed to connect to security backend.");
         } finally {
@@ -106,7 +133,21 @@ export default function DatasetSecurityScanner() {
 
     const proceed = () => {
         if (result?.status === 'safe') {
-            router.push(`/connect?url=${encodeURIComponent(url)}`);
+            const isJsonUpload = new URLSearchParams(window.location.search).get('source') === 'json';
+            if (isJsonUpload) {
+                // For JSON upload, we skip /connect and go straight to /interaction
+                // But we need a connectionId. The 'scan-content' response should provide it.
+                const cid = (result as any).connectionId;
+                if (cid) {
+                    router.push(`/interaction?id=${cid}`);
+                } else {
+                    // Fallback: manually connect it if scanning didn't (rare)
+                    alert("Proceeding to dashboard...");
+                    router.push('/dashboard');
+                }
+            } else {
+                router.push(`/connect?url=${encodeURIComponent(url)}`);
+            }
         }
     };
 
@@ -185,8 +226,9 @@ export default function DatasetSecurityScanner() {
                                 </div>
 
                                 <button
+                                    id="initialize-scan-btn"
                                     onClick={startScan}
-                                    disabled={!!error || !url}
+                                    disabled={(!!error && !new URLSearchParams(window.location.search).get('source')) || !url}
                                     className="w-full bg-gradient-to-r from-blue-600 to-emerald-600 hover:from-blue-500 hover:to-emerald-500 disabled:from-slate-800 disabled:to-slate-800 disabled:cursor-not-allowed text-white font-semibold py-4 rounded-2xl transition-all shadow-lg shadow-blue-500/10 flex items-center justify-center gap-2 group"
                                 >
                                     <Search className="w-5 h-5 group-hover:scale-110 transition-transform" />
@@ -208,7 +250,7 @@ export default function DatasetSecurityScanner() {
                                         <Loader2 className="w-16 h-16 text-blue-500 animate-spin relative z-10" />
                                     </div>
                                     <h3 className="text-xl font-semibold mb-2">Analyzing Dataset Safety...</h3>
-                                    <p className="text-slate-400 text-sm">Performing deep inspection on {new URL(url).hostname}</p>
+                                    <p className="text-slate-400 text-sm">Performing deep inspection on {url.startsWith('http') ? new URL(url).hostname : url}</p>
                                 </div>
 
                                 <div className="space-y-4">

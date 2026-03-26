@@ -1,4 +1,5 @@
 import hashlib
+import re
 from fastapi import APIRouter, Depends, HTTPException, Body, Request
 from sqlalchemy.orm import Session
 from typing import Optional

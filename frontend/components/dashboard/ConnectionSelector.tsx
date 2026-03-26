@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Database, CheckCircle2, ChevronDown, Plus, Trash2, Lock, Eye, EyeOff, Unlock, AlertCircle, Loader2, X } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { motion, AnimatePresence } from 'framer-motion';
-import { getConnections, deleteConnection, verifyMasterPassword } from '@/services/api';
+import { getConnections, deleteConnection, verifyMasterPassword, getMultidbConnections } from '@/services/api';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
@@ -14,6 +14,8 @@ interface Connection {
     host: string;
     database?: string;
     port?: number;
+    isMultidb?: boolean;
+    dbType?: string;
 }
 
 interface ConnectionSelectorProps {
@@ -188,12 +190,27 @@ export const ConnectionSelector = (props: ConnectionSelectorProps) => {
     useEffect(() => {
         const fetchConnections = async () => {
             try {
-                const data = await getConnections();
-                setConnections(data);
+                const [standardData, multiData] = await Promise.all([
+                    getConnections(),
+                    getMultidbConnections()
+                ]);
+                
+                // Merge connections: normalize MultiDB to match standard structure
+                const normalizedMulti = multiData.map((c: any) => ({
+                    id: c.id,
+                    name: c.name || `${c.dbType} @ ${c.host || 'cloud'}`,
+                    host: c.host || 'Cloud Endpoint',
+                    database: c.database,
+                    isMultidb: true,
+                    dbType: c.dbType
+                }));
+
+                const allConnections = [...standardData, ...normalizedMulti];
+                setConnections(allConnections);
                 
                 // If we have a selectedId from props, set it as active if found
                 if (selectedId) {
-                    const found = data.find((c: Connection) => c.id === selectedId);
+                    const found = allConnections.find((c: any) => c.id === selectedId);
                     if (found) {
                         setSelected(found);
                         onSelect(found);
@@ -208,9 +225,14 @@ export const ConnectionSelector = (props: ConnectionSelectorProps) => {
         fetchConnections();
     }, [selectedId]); // Re-fetch or re-sync when selectedId changes
 
-    // When user clicks a connection — show the password modal
+    // When user clicks a connection — show the password modal for standard, or select directly for multidb
     const handleConnectionClick = (conn: Connection) => {
-        setPendingConn(conn);
+        if (conn.isMultidb) {
+            setSelected(conn);
+            onSelect(conn);
+        } else {
+            setPendingConn(conn);
+        }
         setIsOpen(false);
     };
 

@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { connectUrl } from '@/services/api';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Link as LinkIcon, AlertCircle, Loader2, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { Link as LinkIcon, AlertCircle, Loader2, ArrowRight, CheckCircle2, FileJson, Upload, Zap } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { DataTable } from '@/components/dashboard/DataTable';
 
@@ -121,6 +121,48 @@ export default function ConnectPage() {
                                             )}
                                         </Button>
                                     </form>
+
+                                    <div className="mt-12 pt-8 border-t border-gray-100">
+                                        <div className="text-center mb-6">
+                                            <div className="inline-flex items-center gap-2 px-3 py-1 bg-amber-50 text-amber-600 rounded-full text-[10px] font-bold uppercase tracking-widest mb-2">
+                                                <Zap size={12} /> New Feature
+                                            </div>
+                                            <h2 className="text-xl font-bold text-gray-900">Upload Dataset</h2>
+                                            <p className="text-sm text-gray-500 mt-1">Don't have a URL? Upload your local file instead.</p>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 gap-4">
+                                            <label className="relative group cursor-pointer">
+                                                <input 
+                                                    type="file" 
+                                                    accept=".json" 
+                                                    className="hidden" 
+                                                    onChange={async (e) => {
+                                                        const file = e.target.files?.[0];
+                                                        if (file) {
+                                                            const reader = new FileReader();
+                                                            reader.onload = (event) => {
+                                                                const content = event.target?.result as string;
+                                                                sessionStorage.setItem('pending_upload_json', content);
+                                                                sessionStorage.setItem('pending_upload_name', file.name);
+                                                                window.location.href = '/security-scanner?source=json';
+                                                            };
+                                                            reader.readAsText(file);
+                                                        }
+                                                    }}
+                                                />
+                                                <div className="p-6 border-2 border-dashed border-gray-200 rounded-2xl flex flex-col items-center gap-3 hover:border-indigo-400 hover:bg-indigo-50/30 transition-all group-hover:scale-[1.02] active:scale-[0.98]">
+                                                    <div className="p-3 bg-indigo-50 rounded-xl text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-all">
+                                                        <FileJson size={24} />
+                                                    </div>
+                                                    <div className="text-center">
+                                                        <p className="font-bold text-gray-900">Import JSON File</p>
+                                                        <p className="text-xs text-gray-400">Click to browse or drag and drop</p>
+                                                    </div>
+                                                </div>
+                                            </label>
+                                        </div>
+                                    </div>
                                 </Card>
                             ) : (
                                 <div className="space-y-6">

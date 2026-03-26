@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 from datetime import datetime
 from contextlib import asynccontextmanager
 
-from app.routes import connection_routes, query_routes, url_connect_routes, security_routes, voice_routes, report_routes, auth_routes, ai_insights, history_routes, multidb_routes
+from app.routes import connection_routes, query_routes, url_connect_routes, security_routes, voice_routes, report_routes, auth_routes, ai_insights, history_routes, multidb_routes, scheduler_routes
 from app.monitoring.routers import monitor_ws, monitor_sync
 from app.reporting.api import router as reporting_router
 from app.monitoring.dash_app import init_dash
@@ -31,6 +31,10 @@ async def lifespan(app: FastAPI):
     # Preheat Whisper model in background
     from app.services.voice_service import preheat_model
     preheat_model()
+    
+    # Start background scheduler
+    from app.routes.scheduler_routes import start_scheduler
+    start_scheduler()
     
     print(f"🚀 Querion API is warming up on port {settings.PORT}...")
     yield
@@ -86,6 +90,7 @@ app.include_router(reporting_router,                                    tags=["E
 app.include_router(ai_insights.router,       prefix="/api",             tags=["ai-insights"])
 app.include_router(history_routes.router,    prefix="/api/history",     tags=["history"])
 app.include_router(multidb_routes.router,    prefix="/api/multidb",     tags=["multidb"])
+app.include_router(scheduler_routes.router,  prefix="/api",             tags=["scheduler"])
 
 # ── Dash dashboard ────────────────────────────────────────────────────────────
 init_dash(app)
