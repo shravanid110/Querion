@@ -252,11 +252,11 @@ async def process_sync_background(req: SyncRequest, project_id: int, is_restart:
 
                 grouped_events = list(events_map.values())
 
-                # c. Process Grouped Events for Dashboard
-                import uuid
                 for i, event in enumerate(grouped_events):
-                    log_id = f"evt-{uuid.uuid4().hex[:12]}"
                     full_block = "\n".join(event["lines"])
+                    # Use the same cluster key logic as the storage/API for ID consistency
+                    group_key = event["lines"][0].strip()[:100].lower()
+                    log_id = f"evt-{group_key}"
                     
                     # Rule 6: Detect SEVERITY
                     severity = "INFO"
@@ -323,14 +323,30 @@ async def process_sync_background(req: SyncRequest, project_id: int, is_restart:
                             try:
                                 # Pre-extract path for DB context
                                 f_path = "N/A"
-                                pm = _re.search(r'([A-Za-z]:\\[^: ]+|/[^: ]+)(\.jsx?|\.tsx?|\.py|\.js|\.ts)', full_text)
+                                # Find multiple paths, pick the first one that isn't node_modules
+                                all_paths = _re.findall(r'([A-Za-z]:\\[^: \n]+|/[^: \n]+)(?:\.jsx?|\.tsx?|\.py|\.js|\.ts)', full_text)
                                 file_context = None
-                                if pm:
-                                    f_path = pm.group(0)
+                                
+                                target_path = None
+                                for p in all_paths:
+                                    if "node_modules" not in p and ".next" not in p:
+                                        target_path = p
+                                        break
+                                
+                                if not target_path and all_paths:
+                                    target_path = all_paths[0] # Fallback to first found
+
+                                if target_path:
+                                    f_path = target_path
                                     with next(get_monitor_db()) as sub_db:
-                                        basename = f_path.split('\\')[-1].split('/')[-1]
-                                        pf = sub_db.query(ProjectFile).filter(ProjectFile.project_id == pid).filter(ProjectFile.file_path.like(f"%{basename}%")).first()
-                                        if pf: file_context = pf.content[:3000]
+                                        # Use a clearer basename logic
+                                        basename = target_path.replace("\\", "/").split("/")[-1]
+                                        ext = target_path.split(".")[-1]
+                                        pf = sub_db.query(ProjectFile).filter(
+                                            ProjectFile.project_id == pid,
+                                            ProjectFile.file_path.ilike(f"%{basename}")
+                                        ).first()
+                                        if pf: file_context = pf.content[:4000]
 
                                 from app.ai.log_analyzer import analyze_log
                                 from app.routes.ai_insights import add_insight
@@ -368,7 +384,8 @@ async def process_sync_background(req: SyncRequest, project_id: int, is_restart:
                                     "code_snippet": ai_res.get("code_snippet"),
                                     "generated_fix_code": ai_res.get("generated_fix_code") or ai_res.get("correct_code"),
                                     "prevention_advice": ai_res.get("prevention_advice") or [],
-                                    "session_id": PROJ_SESSIONS.get(pid, "initial")
+                                    "session_id": PROJ_SESSIONS.get(pid, "initial"),
+                                    "full_report": ai_res.get("full_report", True)
                                 }
                                 
                                 add_insight(ai_res, full_text)
@@ -433,6 +450,20 @@ async def get_user_projects(user_id: str, db: Session = Depends(get_monitor_db))
     return results
 
 
+@router.get("/logs-meta/{project_id}")
+async def get_project_logs_meta(project_id: int, db: Session = Depends(get_monitor_db)):
+    """Lightweight polling endpoint to prevent frontend from fetching large log payloads if nothing changed."""
+    project = db.query(UserProject).filter(UserProject.id == project_id).first()
+    if not project:
+        return {"count": 0, "last_updated": ""}
+    
+    log_count = db.query(ProjectLog).filter(ProjectLog.project_id == project.id).count()
+    return {
+        "count": log_count,
+        "last_updated": project.last_updated.isoformat() + "Z" if project.last_updated else ""
+    }
+
+
 @router.get("/logs/{project_id}")
 async def get_project_logs(project_id: int, limit: int = 200, db: Session = Depends(get_monitor_db)):
     """Return recent log lines for a project, filtered by session if active."""
@@ -464,6 +495,35 @@ async def get_project_files(project_id: int, db: Session = Depends(get_monitor_d
         
     return filtered_files
 
+
+@router.post("/analyze-error-v2")
+async def analyze_error_v2(req: dict):
+    """
+    🚨 DEEPSEEK AGENTIC ANALYSIS
+    Provides a direct, high-fidelity explanation of the error.
+    """
+    log_content = req.get("log", "")
+    if not log_content:
+        return JSONResponse(status_code=400, content={"error": "No log content provided"})
+
+    # Call the core LLM engine
+    from app.ai.log_analyzer import analyze_log
+    
+    # We'll try to find any relevant file context for this log line if possible
+    file_context = None
+    # Quick regex search for paths in the log to provide better context
+    path_match = _re.search(r'([A-Za-z]:\\[^: \n]+|/[^: \n]+)\.(jsx?|tsx?|py|js|ts)', log_content)
+    if path_match:
+        target_path = path_match.group(0)
+        basename = target_path.replace("\\", "/").split("/")[-1]
+        with next(get_monitor_db()) as db:
+            pf = db.query(ProjectFile).filter(
+                ProjectFile.file_path.ilike(f"%{basename}")
+            ).first()
+            if pf: file_context = pf.content[:4000]
+
+    result = await analyze_log(log_content, file_context=file_context)
+    return result
 
 @router.get("/file-content/{project_id}")
 async def get_file_content(project_id: int, path: str, db: Session = Depends(get_monitor_db)):
@@ -755,4 +815,3 @@ async def chat_with_agent(req: ChatRequest, db: Session = Depends(get_monitor_db
         f"- **Action:** Please check your OpenRouter API key and credits. The last error was: `{last_error}`"
     )
     return {"response": local_response}
-

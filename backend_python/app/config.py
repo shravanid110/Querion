@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     VOICE_API_KEY: str = ""
     LLM_BASE_URL: str = "https://openrouter.ai/api/v1"
     
+    # AI / Ollama Settings
+    OLLAMA_API_URL: str = "http://localhost:11434/api/generate"
+    OLLAMA_MODEL: str = "deepseek-coder"
+    
     # SMTP Settings
     SMTP_SERVER: str = "smtp.gmail.com"
     SMTP_PORT: int = 587

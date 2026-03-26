@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import AIObservabilityPanel from './AIObservabilityPanel';
+import axios from 'axios';
 
 // --- Types ---
 interface DashboardProps {
@@ -105,6 +106,69 @@ export default function DashboardTab({ project, logs }: DashboardProps) {
     const [activePanels, setActivePanels] = useState<string[]>(['health', 'api', 'db', 'error', 'security', 'users', 'ai', 'terminal']);
     const [latestAI, setLatestAI] = useState<{ reason: string; impact: string; suggested_fix: string } | null>(null);
     const [liveStream, setLiveStream] = useState<any[]>([]);
+    const [logGroups, setLogGroups] = useState<any[]>([]);
+
+    // Explain Error Helper
+    const explainError = (text: string) => {
+        if (!text) return { title: 'Unknown Pattern', file: 'N/A' };
+        
+        const lines = text.split('\n').filter(l => l.trim() !== '');
+        
+        let title = lines[0];
+        const errorMatch = text.match(/[A-Za-z0-9_]+Error:.*?(?=\n)/);
+        if (errorMatch) {
+            title = errorMatch[0];
+        } else if (title.length > 100) {
+            title = title.substring(0, 100) + '...';
+        }
+        
+        let file = 'Unknown location';
+        for (const line of lines) {
+            if (line.includes(' at ') && line.includes('(')) {
+                const match = line.match(/\((.*?:\d+:\d+)\)/);
+                if (match) file = match[1];
+            } else if (line.includes('File "')) {
+                const match = line.match(/File\s+"([^"]+)",\s+line\s+(\d+)/);
+                if (match) file = `${match[1]}:${match[2]}`;
+            } else if (line.match(/[A-Za-z0-9_\-\/]+\.(js|ts|py|tsx|jsx):\d+/)) {
+                const match = line.match(/[A-Za-z0-9_\-\/]+\.(js|ts|py|tsx|jsx):\d+/);
+                if (match) file = match[0];
+            } else if (line.includes('|')) {
+                if (line.match(/^\d+\s*\|/)) {
+                    const idx = lines.indexOf(line);
+                    if (idx > 0 && lines[idx-1].includes('(/')) {
+                        file = lines[idx-1].trim().split(' ').pop() || file;
+                    }
+                }
+            }
+        }
+        
+        return { title, file };
+    };
+
+    // Fetch Log Groups Matrix
+    useEffect(() => {
+        if (!project?.id) return;
+        let isMounted = true;
+        
+        const fetchLogGroups = async () => {
+             try {
+                 const res = await axios.get(`http://127.0.0.1:4000/api/monitor/log-groups/${project.id}`);
+                 if (isMounted && Array.isArray(res.data)) {
+                     setLogGroups(res.data);
+                 }
+             } catch (e) {
+                 console.error("Failed to fetch log groups:", e);
+             }
+        };
+        fetchLogGroups();
+        
+        const interval = setInterval(fetchLogGroups, 5000);
+        return () => {
+            isMounted = false;
+            clearInterval(interval);
+        };
+    }, [project?.id]);
 
     // Extract metrics from real logs
     useEffect(() => {
@@ -265,6 +329,42 @@ export default function DashboardTab({ project, logs }: DashboardProps) {
     );
 
     // --- Chart Options ---
+
+    // Error Matrix Option
+    const errorTypeOption = useMemo(() => {
+        const counts = { CRITICAL: 0, ERROR: 0, WARNING: 0, INFO: 0 };
+        logGroups.forEach(g => {
+            if (counts[g.severity as keyof typeof counts] !== undefined) {
+                counts[g.severity as keyof typeof counts] += g.count;
+            }
+        });
+        return {
+            backgroundColor: 'transparent',
+            tooltip: { trigger: 'item' },
+            legend: {
+                bottom: '0%',
+                left: 'center',
+                textStyle: { color: '#cbd5e1', fontSize: 10 },
+                itemWidth: 10,
+                itemHeight: 10
+            },
+            series: [{
+                name: 'Error Matrix',
+                type: 'pie',
+                radius: ['45%', '70%'],
+                center: ['50%', '45%'],
+                avoidLabelOverlap: false,
+                itemStyle: { borderRadius: 4, borderColor: '#0f172a', borderWidth: 2 },
+                label: { show: false },
+                data: [
+                    { value: counts.CRITICAL || 0, name: 'CRITICAL', itemStyle: { color: '#ef4444' } },
+                    { value: counts.ERROR || 0, name: 'ERROR', itemStyle: { color: '#f97316' } },
+                    { value: counts.WARNING || 0, name: 'WARNING', itemStyle: { color: '#f59e0b' } },
+                    { value: counts.INFO || 0, name: 'INFO', itemStyle: { color: '#6366f1' } },
+                ].filter(d => d.value > 0)
+            }]
+        };
+    }, [logGroups]);
 
     // CPU Real-time Line Chart (Modified to follow scenarios)
     const cpuOption = useMemo(() => ({
@@ -557,38 +657,61 @@ export default function DashboardTab({ project, logs }: DashboardProps) {
                                 </div>
                             </div>
 
-                            {/* Terminal Log Stream */}
-                            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 flex flex-col min-h-[250px] shadow-2xl mt-6">
-                                <div className="flex justify-between items-center mb-4">
-                                    <div className="flex items-center gap-3">
-                                        <div className="p-2 bg-indigo-500/10 rounded-xl"><Terminal size={14} className="text-indigo-400" /></div>
-                                        <span className="text-xs font-black text-slate-200 tracking-widest uppercase">Real-Time Telemetry Stream</span>
+                            {/* Project Error Matrix & Log Intelligence */}
+                            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-2xl mt-6 flex flex-col lg:flex-row gap-6">
+                                {/* Error Chart */}
+                                <div className="lg:w-1/3 flex flex-col">
+                                    <div className="flex items-center gap-3 mb-4">
+                                        <div className="p-2 bg-indigo-500/10 rounded-xl"><Database size={14} className="text-indigo-400" /></div>
+                                        <span className="text-xs font-black text-slate-200 tracking-widest uppercase">Global Error Matrix</span>
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                        <span className="text-[9px] font-black text-emerald-500 tracking-widest">LIVE TRANSMISSION</span>
+                                    <div className="flex-1 bg-slate-950/50 rounded-2xl border border-slate-800/50 p-2 min-h-[220px]">
+                                        {logGroups.length === 0 ? (
+                                             <div className="h-full flex items-center justify-center text-[10px] text-slate-600 font-black tracking-widest uppercase">Scanning for Errors...</div>
+                                        ) : (
+                                            <EChart option={errorTypeOption} style={{ height: '200px' }} />
+                                        )}
                                     </div>
                                 </div>
-                                <div className="flex-1 overflow-y-auto font-mono text-[10px] space-y-1 custom-scrollbar max-h-[180px] bg-slate-950/50 p-4 rounded-2xl border border-slate-800/50 shadow-inner">
-                                    {liveStream.length === 0 ? (
-                                        <div className="text-slate-700 italic flex items-center gap-2">
-                                            <div className="w-1 h-3 bg-indigo-500 animate-pulse" />
-                                            Waiting for incoming log patterns...
+                                
+                                {/* Error Explanations List */}
+                                <div className="lg:w-2/3 flex flex-col">
+                                    <div className="flex justify-between items-center mb-4">
+                                        <div className="flex items-center gap-3">
+                                            <div className="p-2 bg-red-500/10 rounded-xl"><AlertTriangle size={14} className="text-red-400" /></div>
+                                            <span className="text-xs font-black text-slate-200 tracking-widest uppercase">Live Threat Explanations</span>
                                         </div>
-                                    ) : (
-                                        liveStream.map((log, i) => (
-                                            <div key={i} className="flex gap-3 animate-in fade-in slide-in-from-left-2 duration-300 border-b border-slate-800/10 pb-1 last:border-0">
-                                                <span className="text-slate-600 shrink-0 select-none opacity-50 font-mono">[{new Date().toLocaleTimeString()}]</span>
-                                                <span className={cn(
-                                                    "font-black uppercase shrink-0 w-12",
-                                                    ['error', 'critical'].includes(log.type) ? 'text-red-500' : log.type === 'warning' ? 'text-amber-500' : 'text-indigo-500'
-                                                )}>{log.type}</span>
-                                                <span className="text-slate-300 whitespace-pre-wrap font-mono leading-relaxed break-words flex-1">
-                                                    {log.data || log.log_line}
-                                                </span>
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                            <span className="text-[9px] font-black text-emerald-500 tracking-widest uppercase">Analysis Active</span>
+                                        </div>
+                                    </div>
+                                    <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar max-h-[220px] bg-slate-950/50 p-4 rounded-2xl border border-slate-800/50 shadow-inner">
+                                        {logGroups.filter(g => g.severity === 'CRITICAL' || g.severity === 'ERROR' || g.severity === 'WARNING').length === 0 ? (
+                                            <div className="text-slate-700 italic flex items-center justify-center h-full gap-2 text-[10px] font-black uppercase tracking-widest">
+                                                No Major Errors Detected
                                             </div>
-                                        ))
-                                    )}
+                                        ) : (
+                                            logGroups.filter(g => g.severity === 'CRITICAL' || g.severity === 'ERROR' || g.severity === 'WARNING').slice(0, 10).map((group, i) => {
+                                                const { title, file } = explainError(group.representative_line);
+                                                return (
+                                                    <div key={group.key || i} className="bg-slate-900 border border-slate-800/80 rounded-xl p-3 flex gap-4 transition-all hover:bg-slate-800/50 shadow-sm border-l-4" style={{borderLeftColor: group.severity === 'CRITICAL' ? '#ef4444' : group.severity === 'ERROR' ? '#f97316' : '#f59e0b'}}>
+                                                        <div className="flex flex-col items-center justify-center bg-slate-950 px-2 py-1 rounded min-w-[3rem]">
+                                                            <span className="text-xs font-black text-white">{group.count}</span>
+                                                            <span className="text-[7px] font-black text-slate-500 uppercase">Hits</span>
+                                                        </div>
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="text-xs font-bold text-slate-200 mb-1 truncate" title={title}>{title}</div>
+                                                            <div className="text-[10px] text-slate-400 flex items-center gap-2">
+                                                                 <BrainCircuit size={10} className="text-indigo-400 shrink-0" />
+                                                                 <span className="truncate">Found in: <span className="font-mono text-indigo-300">{file}</span></span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -688,7 +811,7 @@ export default function DashboardTab({ project, logs }: DashboardProps) {
 
 
                 {/* --- AI Observability Intelligence Panel (4-Agent System) --- */}
-                <AIObservabilityPanel />
+                <AIObservabilityPanel logGroups={logGroups} />
 
             </div>
 

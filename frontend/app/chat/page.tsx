@@ -8,12 +8,12 @@ import { DataTable } from '@/components/dashboard/DataTable';
 import { ChartPanel } from '@/components/dashboard/ChartPanel';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { 
-    Sparkles, 
-    AlertCircle, 
-    Database, 
-    ChevronRight, 
-    Target, 
+import {
+    Sparkles,
+    AlertCircle,
+    Database,
+    ChevronRight,
+    Target,
     Zap,
     LayoutDashboard,
     Clock
@@ -53,21 +53,21 @@ function ChatContent() {
     // Generate Secure SHA-256 Pipeline
     const getOrGenerateSession = async () => {
         if (sessionId && sessionHash) return { sid: sessionId, hash: sessionHash };
-        
+
         try {
             const sid = generateUUID();
             const rawKey = `sk_${sid}_${Date.now()}`;
-            
+
             // SHA-256 Hashing natively
             const encoder = new TextEncoder();
             const data = encoder.encode(rawKey);
             const hashBuffer = await crypto.subtle.digest('SHA-256', data);
             const hashArray = Array.from(new Uint8Array(hashBuffer));
             const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-            
+
             setSessionId(sid);
             setSessionHash(hashHex);
-            
+
             // Store securely in DB 
             const { data: authData } = await supabase.auth.getUser();
             if (authData?.user?.id) {
@@ -79,8 +79,8 @@ function ChatContent() {
                 }]);
             }
             return { sid, hash: hashHex };
-        } catch(e) { 
-            console.error('Secure Pipeline init failed', e); 
+        } catch (e) {
+            console.error('Secure Pipeline init failed', e);
             return { sid: '', hash: '' };
         }
     };
@@ -91,7 +91,7 @@ function ChatContent() {
             try {
                 const conns = await getMultidbConnections();
                 setConnections(conns);
-                
+
                 if (conns.length > 0) {
                     if (connId) {
                         const target = conns.find((c: any) => String(c.id) === connId);
@@ -114,14 +114,14 @@ function ChatContent() {
         if (selectedConnection) {
             // Mocking schema for UI demonstration until backend endpoint is fully integrated for schema fetch
             if (selectedConnection.dbType === 'redis') {
-                 setSchema([
-                    { name: 'Keys', columns: [{name: 'key', type: 'string'}, {name: 'value', type: 'string'}] }
+                setSchema([
+                    { name: 'Keys', columns: [{ name: 'key', type: 'string' }, { name: 'value', type: 'string' }] }
                 ]);
             } else {
                 setSchema([
-                    { name: 'customers', columns: [{name: 'id', type: 'integer'}, {name: 'name', type: 'string'}, {name: 'location', type: 'string'}] },
-                    { name: 'orders', columns: [{name: 'id', type: 'integer'}, {name: 'customer_id', type: 'integer'}, {name: 'amount', type: 'float'}, {name: 'date', type: 'date'}] },
-                    { name: 'products', columns: [{name: 'sku', type: 'string'}, {name: 'price', type: 'float'}, {name: 'category', type: 'string'}] }
+                    { name: 'customers', columns: [{ name: 'id', type: 'integer' }, { name: 'name', type: 'string' }, { name: 'location', type: 'string' }] },
+                    { name: 'orders', columns: [{ name: 'id', type: 'integer' }, { name: 'customer_id', type: 'integer' }, { name: 'amount', type: 'float' }, { name: 'date', type: 'date' }] },
+                    { name: 'products', columns: [{ name: 'sku', type: 'string' }, { name: 'price', type: 'float' }, { name: 'category', type: 'string' }] }
                 ]);
             }
         }
@@ -131,7 +131,7 @@ function ChatContent() {
     useEffect(() => {
         setResult(null);
         setError(null);
-        
+
         // Wipe secure pipeline state to force regenerate a completely fresh hash natively under the newly selected database
         setSessionId('');
         setSessionHash('');
@@ -153,7 +153,7 @@ function ChatContent() {
 
             // Run exactly as it is but attaching the hash header for terminal printing
             const data = await runMultidbQuery(selectedConnection.id, prompt, hash);
-            
+
             // Dual-write native history to Supabase
             try {
                 const { data: authData } = await supabase.auth.getUser();
@@ -170,26 +170,26 @@ function ChatContent() {
                         metrics: JSON.stringify(data.metrics || {}),
                         created_at: new Date().toISOString()
                     }]);
-                    
+
                     // Track secure pipe message
                     if (sid) {
-                         const insertMsg = await supabase.from('chat_messages').insert([{
-                             message_id: generateUUID(),
-                             session_id: sid,
-                             user_message: prompt,
-                             ai_response: data,
-                             metadata: { 
-                                 pipelineHash: hash, 
-                                 connectionId: selectedConnection.id,
-                                 connectionName: selectedConnection.name || 'Database Connection' 
-                             },
-                             created_at: new Date().toISOString()
-                         }]);
-                         
-                         // Debug helper to catch RLS issues if any
-                         if (insertMsg.error) {
-                             console.error("Supabase Chat Message Insert Error. Did you disable RLS?", insertMsg.error);
-                         }
+                        const insertMsg = await supabase.from('chat_messages').insert([{
+                            message_id: generateUUID(),
+                            session_id: sid,
+                            user_message: prompt,
+                            ai_response: data,
+                            metadata: {
+                                pipelineHash: hash,
+                                connectionId: selectedConnection.id,
+                                connectionName: selectedConnection.name || 'Database Connection'
+                            },
+                            created_at: new Date().toISOString()
+                        }]);
+
+                        // Debug helper to catch RLS issues if any
+                        if (insertMsg.error) {
+                            console.error("Supabase Chat Message Insert Error. Did you disable RLS?", insertMsg.error);
+                        }
                     }
                 }
             } catch (e) { console.error("History sync error:", e); }
@@ -207,18 +207,18 @@ function ChatContent() {
             <Navbar connectionName={selectedConnection?.name} />
 
             <div className="flex pt-16 h-screen overflow-hidden">
-                <ChatSidebar 
-                    connection={selectedConnection} 
-                    schema={schema} 
-                    onSelectTable={(table) => handleSearch(`Show data for table ${table}`)} 
+                <ChatSidebar
+                    connection={selectedConnection}
+                    schema={schema}
+                    onSelectTable={(table) => handleSearch(`Show data for table ${table}`)}
                 />
 
                 <main className="flex-1 ml-80 p-8 overflow-y-auto pb-24 scroll-smooth bg-[url('/grid.svg')] bg-center bg-fixed">
                     <div className="max-w-6xl mx-auto space-y-10">
-                        
+
                         {/* Welcome Header */}
                         {!result && !isThinking && (
-                            <motion.div 
+                            <motion.div
                                 initial={{ opacity: 0, y: 20 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 className="text-center py-20 space-y-4"
@@ -230,9 +230,9 @@ function ChatContent() {
                                     {selectedConnection?.dbType === 'redis' ? 'Explore your Redis Data' : 'How can I help with your data?'}
                                 </h1>
                                 <p className="text-slate-400 text-lg max-w-2xl mx-auto">
-                                    Connected to <span className="text-indigo-400 font-bold">{selectedConnection?.name || 'Loading...'}</span>. 
-                                    {selectedConnection?.dbType === 'redis' 
-                                        ? 'Ask me to list keys, get values, or analyze cache performance.' 
+                                    Connected to <span className="text-indigo-400 font-bold">{selectedConnection?.name || 'Loading...'}</span>.
+                                    {selectedConnection?.dbType === 'redis'
+                                        ? 'Ask me to list keys, get values, or analyze cache performance.'
                                         : 'Ask me anything about your datasets in natural language.'}
                                 </p>
                             </motion.div>
@@ -240,9 +240,9 @@ function ChatContent() {
 
                         {/* Search Interface */}
                         <div className={cn("transition-all duration-500", result ? "mt-0" : "mt-8")}>
-                            <ChatInterface 
-                                onSearch={handleSearch} 
-                                isThinking={isThinking} 
+                            <ChatInterface
+                                onSearch={handleSearch}
+                                isThinking={isThinking}
                                 generatedSql={result?.sql}
                                 dbType={selectedConnection?.dbType}
                             />
@@ -262,7 +262,7 @@ function ChatContent() {
 
                         {/* Result Display Blocks */}
                         {result && (
-                            <motion.div 
+                            <motion.div
                                 initial={{ opacity: 0, y: 30 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 transition={{ duration: 0.6 }}
@@ -318,12 +318,12 @@ function ChatContent() {
                                         </div>
                                     </div>
                                     <div className="h-[500px]">
-                                         <ChartPanel 
-                                             data={result.rows} 
-                                             columns={result.columns} 
-                                             initialChartType={result.suggestedChart}
-                                         />
-                                     </div>
+                                        <ChartPanel
+                                            data={result.rows}
+                                            columns={result.columns}
+                                            initialChartType={result.suggestedChart}
+                                        />
+                                    </div>
                                 </div>
 
                                 {/* Data Table Section */}

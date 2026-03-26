@@ -330,5 +330,8 @@ def analyze_log_and_assign_chart(log: Dict[str, Any]) -> Dict[str, Any]:
     return analyzer.analyze(log)
 
 def explain_log_issue(log: Dict[str, Any]) -> Dict[str, str]:
-    """Public function to return AI-driven insights for a log."""
+    """
+    Public function to return AI-driven insights for a log.
+    Note: This is now a lightweight fallback. Real analysis happens via analyze_log.
+    """
     return AIInsightGenerator.get_explanation(log)

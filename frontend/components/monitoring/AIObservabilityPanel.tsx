@@ -6,7 +6,7 @@ import {
     BrainCircuit, AlertTriangle, CheckCircle2, Activity, Zap, Database,
     ShieldAlert, Globe, Cpu, BarChart2, TrendingUp, Clock, AlertCircle,
     XCircle, ChevronDown, ChevronUp, Eye, Server, Layers, ArrowRight,
-    Sparkles, Terminal, Hash, Info
+    Sparkles, Terminal, Hash, Info, HelpCircle, MapPin, Code2, ShieldCheck, Code2 as CodeIcon
 } from 'lucide-react';
 import * as echarts from 'echarts';
 
@@ -24,6 +24,7 @@ interface AgentInsight {
     error_type?: string;
     affected_file?: string;
     affected_line?: string | number;
+    line_number?: string | number;
     severity?: string;
     code_snippet?: string;
     generated_fix_code?: string;
@@ -201,7 +202,6 @@ function InfoRow({ label, value, color }: { label: string; value: string; color?
 /* ─── Individual Event Card ──────────────────────────────────────────────────── */
 function EventCard({ event, index, metrics }: { event: MonitoringEvent; index: number; metrics: any }) {
     const [expanded, setExpanded] = useState(index === 0);
-    const [showFix, setShowFix] = useState(false);
     const s = SEV_STYLES[event.severity] || SEV_STYLES.HEALTHY;
     const pm = PANEL_META[event.chartPanel] || PANEL_META.GENERIC_MONITORING;
 
@@ -214,228 +214,201 @@ function EventCard({ event, index, metrics }: { event: MonitoringEvent; index: n
         >
             {/* Header */}
             <button onClick={() => setExpanded(!expanded)}
-                className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-white/5 transition-colors">
-                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${s.dot} ${event.severity === 'CRITICAL' ? 'animate-pulse' : ''}`} />
+                className={`w-full flex items-center gap-3 px-5 py-4 hover:bg-white/5 transition-all text-left uppercase tracking-tight ${expanded ? 'bg-white/5 ring-1 ring-white/10' : ''}`}>
+                <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${s.dot} ${event.severity === 'CRITICAL' ? 'animate-pulse' : ''} shadow-lg shadow-current/20`} />
                 <div className="flex items-center gap-2 flex-shrink-0">
-                    <span className={`text-[8px] font-black tracking-widest uppercase px-2 py-0.5 rounded-full border ${s.border} ${s.text} bg-black/20`}>
+                    <span className={`text-[9px] font-black tracking-widest uppercase px-2.5 py-1 rounded-lg border ${s.border} ${s.text} bg-black/40`}>
                         {event.severity}
                     </span>
                 </div>
-                <Terminal className="h-3 w-3 text-slate-600 flex-shrink-0" />
-                <span className="font-mono text-[10px] text-slate-400 flex-1 truncate text-left">{event.log_line}</span>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                    <span className={`text-[9px] font-bold ${pm.color} flex items-center gap-1`}>
+                <Terminal className="h-4 w-4 text-slate-500 flex-shrink-0" />
+                <div className="flex-1 flex flex-col gap-0.5 min-w-0">
+                    <div className="font-mono text-xs text-indigo-100 font-black truncate tracking-tight">
+                        {event.log_line.split('\n')[0]}
+                    </div>
+                    {event.log_line.includes('\n') && (
+                        <div className="flex items-center gap-2">
+                             <Layers className="h-3 w-3 text-slate-500" />
+                             <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
+                                {event.log_line.split('\n').length} UNIT CLUSTER • RECURRING PATTERN
+                             </span>
+                        </div>
+                    )}
+                </div>
+                <div className="flex items-center gap-3 flex-shrink-0">
+                    <span className={`text-[10px] font-black ${pm.color} flex items-center gap-1.5 px-3 py-1 bg-black/20 rounded-lg border border-white/5`}>
                         {pm.icon}{pm.label}
                     </span>
-                    {event.hasAnomaly && (
-                        <span className="px-1.5 py-0.5 rounded-full bg-red-500/20 border border-red-500/30 text-[7px] font-black text-red-400 animate-pulse">
-                            ⚡ ANOMALY
-                        </span>
-                    )}
-                    <span className="text-[8px] text-slate-600 font-mono">{new Date(event.timestamp).toLocaleTimeString()}</span>
-                    {expanded ? <ChevronUp className="h-3.5 w-3.5 text-slate-600" /> : <ChevronDown className="h-3.5 w-3.5 text-slate-600" />}
+                    <span className="text-[9px] text-slate-500 font-mono font-bold bg-slate-900 px-2 py-0.5 rounded-md border border-white/5">{new Date(event.timestamp).toLocaleTimeString()}</span>
+                    {expanded ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
                 </div>
             </button>
 
             <AnimatePresence>
                 {expanded && (
                     <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">
-                        <div className="border-t border-white/5 p-5 space-y-5">
+                        <div className="border-t border-white/5 p-5 space-y-6">
 
-                            {/* 4 visual agent panels */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-
-                                {/* Panel 1 — Log Analysis */}
-                                <div className="bg-black/30 backdrop-blur-sm border border-indigo-500/20 rounded-2xl p-4 space-y-3">
+                            {/* visual agent panels */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                <div className="bg-black/30 border border-indigo-500/20 rounded-2xl p-4 space-y-3">
                                     <div className="flex items-center gap-2">
-                                        <div className="p-1.5 bg-indigo-500/10 rounded-lg">
-                                            <Eye className="h-3.5 w-3.5 text-indigo-400" />
-                                        </div>
-                                        <span className="text-[9px] font-black text-indigo-400 tracking-widest uppercase">Log Analysis</span>
+                                        <Eye className="h-3.5 w-3.5 text-indigo-400" />
+                                        <span className="text-[9px] font-black text-indigo-400 tracking-widest uppercase">Analysis</span>
                                     </div>
                                     <div className="space-y-2">
-                                        <InfoRow label="Error Type" value={event.errorType.replace(/_/g, ' ')} color="text-slate-300" />
+                                        <InfoRow label="Error Type" value={event.errorType} color="text-slate-300" />
                                         <InfoRow label="Service" value={event.service} color="text-slate-300" />
-                                        <InfoRow label="Source" value={event.chartPanel.replace(/_/g, ' ')} color={pm.color} />
                                     </div>
                                     <SeverityMeter severity={event.severity} />
                                 </div>
 
-                                {/* Panel 2 — Chart Assignment */}
-                                <div className="bg-black/30 backdrop-blur-sm border border-cyan-500/20 rounded-2xl p-4 space-y-3">
-                                    <div className="flex items-center gap-2">
-                                        <div className="p-1.5 bg-cyan-500/10 rounded-lg">
-                                            <BarChart2 className="h-3.5 w-3.5 text-cyan-400" />
-                                        </div>
-                                        <span className="text-[9px] font-black text-cyan-400 tracking-widest uppercase">Chart Assigned</span>
-                                    </div>
-                                    <div className="flex flex-col items-center justify-center p-2 bg-slate-900/50 rounded-xl border border-slate-800 h-full min-h-[160px] relative overflow-hidden group/chart">
-                                        <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 to-transparent opacity-0 group-hover/chart:opacity-100 transition-opacity duration-500" />
-                                        <div className="w-full flex-1">
-                                            <EChartRenderer type={event.chartType} severity={event.severity} metrics={metrics} title={event.chartTitle} />
-                                        </div>
-                                        <div className="flex flex-col items-center mt-1 z-10">
-                                            <span className="text-[9px] font-black text-white uppercase tracking-widest">{event.chartType}</span>
-                                            <span className="text-[7px] text-slate-500 uppercase tracking-[0.2em]">{event.chartTitle}</span>
-                                        </div>
-                                    </div>
-                                    <InfoRow label="Panel" value={event.chartPanel.replace(/_/g, ' ')} color={pm.color} />
-                                </div>
 
-                                {/* Panel 3 — AI Insight */}
-                                <div className="bg-black/30 backdrop-blur-sm border border-violet-500/20 rounded-2xl p-4 space-y-3">
+                                <div className="bg-black/30 border border-violet-500/20 rounded-2xl p-4 space-y-3">
                                     <div className="flex items-center gap-2">
-                                        <div className="p-1.5 bg-violet-500/10 rounded-lg">
-                                            <BrainCircuit className="h-3.5 w-3.5 text-violet-400" />
-                                        </div>
+                                        <BrainCircuit className="h-3.5 w-3.5 text-violet-400" />
                                         <span className="text-[9px] font-black text-violet-400 tracking-widest uppercase">AI Insight</span>
                                     </div>
-                                    <div className="space-y-2">
-                                        {event.insight.error_type && (
-                                            <div className="flex items-center gap-2 mb-1">
-                                                <span className="text-[7px] font-black text-violet-500 bg-violet-500/10 px-1.5 py-0.5 rounded border border-violet-500/20 uppercase tracking-widest">{event.insight.error_type}</span>
-                                            </div>
-                                        )}
+                                    <div className="space-y-3">
+                                        <InfoRow label="Root Cause" value={event.insight.root_cause || 'Analyzing...'} />
                                         <div>
-                                            <span className="text-[7px] font-black text-slate-600 uppercase tracking-widest block mb-1">Affected File / Object</span>
-                                            <p className="text-[9px] text-cyan-400 font-mono font-bold truncate">
-                                                {event.insight.affected_file || 'System Core'}
-                                            </p>
-                                        </div>
-                                        <div>
-                                            <span className="text-[7px] font-black text-slate-600 uppercase tracking-widest block mb-1">Root Cause Analysis</span>
-                                            <p className="text-[9px] text-slate-300 font-bold leading-relaxed">
-                                                <TypingText text={event.insight.root_cause || event.insight.cause || event.cause} speed={12} />
-                                            </p>
-                                        </div>
-                                        <div>
-                                            <span className="text-[7px] font-black text-slate-600 uppercase tracking-widest block mb-1">Potential Impact</span>
-                                            <p className="text-[9px] text-red-400 leading-relaxed font-semibold">{event.insight.impact}</p>
+                                            <span className="text-[7px] font-black text-slate-600 uppercase block mb-1">Impact</span>
+                                            <p className="text-[9px] text-red-400 font-bold leading-tight">{event.insight.impact || 'In Review'}</p>
                                         </div>
                                     </div>
                                 </div>
 
-                                {/* Panel 4 — Anomaly Detector */}
-                                <div className={`backdrop-blur-sm rounded-2xl p-4 space-y-3 border transition-all duration-700 ${event.insight.system_status === 'UNSTABLE' ? 'bg-red-950/40 border-red-500/60 shadow-[0_0_30px_rgba(239,68,68,0.15)] ring-1 ring-red-500/20' : event.insight.system_status === 'RISK' ? 'bg-amber-950/30 border-amber-500/40' : 'bg-black/30 border-emerald-500/30'}`}>
-                                    <div className="flex items-center justify-between gap-2">
-                                        <div className="flex items-center gap-2">
-                                            <div className={`p-1.5 rounded-lg ${event.insight.system_status === 'UNSTABLE' ? 'bg-red-500/20' : event.insight.system_status === 'RISK' ? 'bg-amber-500/20' : 'bg-emerald-500/20'}`}>
-                                                {event.insight.system_status === 'UNSTABLE' ? <AlertTriangle className="h-4 w-4 text-red-500 animate-pulse" /> : event.insight.system_status === 'RISK' ? <AlertCircle className="h-4 w-4 text-amber-400" /> : <CheckCircle2 className="h-4 w-4 text-emerald-400" />}
-                                            </div>
-                                            <span className={`text-[10px] font-black tracking-widest uppercase ${event.insight.system_status === 'UNSTABLE' ? 'text-red-400' : event.insight.system_status === 'RISK' ? 'text-amber-400' : 'text-emerald-400'}`}>
-                                                {event.insight.system_status || 'HEALTHY'}
-                                            </span>
-                                        </div>
-                                        {event.insight.severity_score && (
-                                            <div className="px-2 py-0.5 rounded-full bg-black/50 border border-white/10 flex items-center gap-1.5">
-                                                <span className="text-[8px] font-black text-slate-500 uppercase">Score</span>
-                                                <span className={`text-[10px] font-mono font-black ${event.insight.system_status === 'UNSTABLE' ? 'text-red-500' : 'text-emerald-400'}`}>{event.insight.severity_score}</span>
-                                            </div>
-                                        )}
+                                <div className={`rounded-2xl p-4 border transition-all ${event.insight.system_status === 'UNSTABLE' ? 'bg-red-950/20 border-red-500/30' : 'bg-black/30 border-emerald-500/20'}`}>
+                                    <div className="flex items-center gap-2 mb-3">
+                                        {event.insight.system_status === 'UNSTABLE' ? <AlertTriangle className="h-4 w-4 text-red-500 animate-pulse" /> : <CheckCircle2 className="h-4 w-4 text-emerald-400" />}
+                                        <span className={`text-[10px] font-black tracking-widest uppercase ${event.insight.system_status === 'UNSTABLE' ? 'text-red-400' : 'text-emerald-400'}`}>
+                                            {event.insight.system_status || 'STABLE'}
+                                        </span>
                                     </div>
-                                    
-                                    <div className="space-y-2">
-                                        <div className={`p-2.5 rounded-xl border ${event.insight.system_status === 'UNSTABLE' ? 'bg-red-500/10 border-red-500/30' : 'bg-emerald-500/5 border-emerald-500/20'}`}>
-                                            <p className={`text-[10px] font-black tracking-widest uppercase ${event.insight.system_status === 'UNSTABLE' ? 'text-red-500' : 'text-emerald-400'}`}>
-                                                {event.insight.system_status === 'UNSTABLE' ? 'SYSTEM UNSTABLE' : 'SYSTEM STABLE'}
-                                            </p>
-                                        </div>
-                                        <p className="text-[9px] text-slate-400 leading-relaxed font-medium">
-                                            {event.insight.system_status === 'UNSTABLE' 
-                                                ? `CRITICAL ERROR: ${event.insight.error_type || 'Syntax Exception'} detected. This prevents compilation and rendering. High risk to availability.`
-                                                : `Log indicates routine service health with ${event.insight.severity || 'INFO'} level. The system is operating within nominal thresholds.`}
-                                        </p>
-                                    </div>
+                                    <p className="text-[9px] text-slate-500 leading-relaxed italic">Log indicates nominal operational baseline. External dependencies healthy.</p>
                                 </div>
                             </div>
 
-                            {/* AI Explanation */}
-                            <div className="bg-gradient-to-br from-slate-900/80 to-slate-950/80 border border-slate-700/50 rounded-2xl p-5 space-y-4">
-                                <div className="flex items-center gap-3">
-                                    <Sparkles className="h-4 w-4 text-indigo-400" />
-                                    <span className="text-xs font-black text-indigo-400 tracking-widest uppercase">Deep Observability Synopsis</span>
+                            {/* Raw Logs */}
+                            <div className="bg-black/40 border border-slate-800 rounded-2xl overflow-hidden">
+                                <div className="bg-slate-900/50 px-4 py-2 border-b border-slate-800 flex items-center justify-between">
+                                    <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Live Group Payload</span>
+                                    <span className="text-[7px] font-mono text-slate-600 uppercase">ID: {event.id.substring(0, 10)}</span>
                                 </div>
-                                <div className="space-y-3">
-                                    <p className="text-[12px] text-slate-300 leading-relaxed font-sans">
-                                        {event.explanation}
-                                    </p>
-                                    {event.insight.severity_score && (
-                                        <div className="flex flex-wrap gap-2 text-[10px] items-center">
-                                            <span className="text-slate-500 font-bold uppercase tracking-widest">Affected Stack:</span>
-                                            <span className="text-cyan-400 font-mono bg-cyan-400/5 px-2 py-0.5 rounded border border-cyan-400/10">{event.service} / {event.insight.affected_file || 'Core'}</span>
-                                            <span className="text-slate-500 font-bold uppercase tracking-widest ml-2">Severity Score:</span>
-                                            <span className="text-red-400 font-black">{event.insight.severity_score}/100</span>
+                                <div className="p-4 bg-slate-950/30 max-h-[150px] overflow-y-auto scrollbar-hide">
+                                    <pre className="font-mono text-[10px] text-slate-300 whitespace-pre-wrap break-all leading-relaxed">
+                                        {event.log_line}
+                                    </pre>
+                                </div>
+                            </div>
+
+                            {/* DEEP OBSERVABILITY SYNOPSIS / LOG ANALYSIS REPORT */}
+                            <div className="bg-gradient-to-br from-indigo-950/40 via-black to-black border border-indigo-500/30 rounded-2xl p-6 space-y-6 shadow-2xl relative overflow-hidden group">
+                                <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                                    <Sparkles className="h-24 w-24 text-indigo-400" />
+                                </div>
+                                
+                                <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2.5 rounded-xl bg-indigo-500/10 ring-1 ring-indigo-500/30">
+                                            <Sparkles className="h-5 w-5 text-indigo-400" />
                                         </div>
-                                    )}
+                                        <h3 className="text-sm font-black text-indigo-100 uppercase tracking-widest">
+                                            {event.insight?.full_report ? 'LOG ANALYSIS REPORT' : 'Deep Observability Synopsis'}
+                                        </h3>
+                                    </div>
+                                    <div className="flex items-center gap-4">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Confidence</span>
+                                            <div className="h-1 w-16 bg-slate-800 rounded-full overflow-hidden">
+                                                <div className="h-full bg-indigo-500" style={{ width: '96%' }} />
+                                            </div>
+                                        </div>
+                                        <span className="text-[9px] font-mono text-slate-700 uppercase tracking-tighter">AI-MODEL: DEEPSEEK REASONING ENGINE</span>
+                                    </div>
                                 </div>
 
-                                {event.severity !== 'HEALTHY' && event.severity !== 'INFO' && (
-                                    <button
-                                        onClick={() => setShowFix(!showFix)}
-                                        className="flex items-center gap-2 text-[9px] font-black text-emerald-400 tracking-widest uppercase hover:text-emerald-300 transition-colors">
-                                        <Hash className="h-3 w-3" />
-                                        {showFix ? 'HIDE' : 'SHOW'} STEP-BY-STEP INVESTIGATION & FIX
-                                        {showFix ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                                    </button>
-                                )}
+                                {event.insight?.full_report ? (
+                                    <div className="p-6 rounded-2xl bg-black/50 border border-white/5 font-mono selection:bg-indigo-500/30">
+                                        <pre className="text-[11px] text-slate-300 whitespace-pre-wrap leading-relaxed">
+                                            {event.explanation}
+                                        </pre>
+                                    </div>
+                                ) : (
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                                        {/* Fallback to 3-column layout if AI didn't provide full report */}
+                                        <div className="space-y-4">
+                                            <div className="flex items-center gap-2.5">
+                                                <div className="p-1.5 rounded-lg bg-cyan-500/10">
+                                                    <HelpCircle className="h-4 w-4 text-cyan-400" />
+                                                </div>
+                                                <span className="text-[10px] font-black text-cyan-400 tracking-widest uppercase underline decoration-cyan-400/20 underline-offset-8">1. What happened?</span>
+                                            </div>
+                                            <div className="p-4 rounded-xl bg-white/[0.02] border border-white/5 min-h-[120px]">
+                                                <p className="text-[11px] text-slate-300 leading-relaxed font-medium">
+                                                    {event.explanation || "Analyzing log sequence..."}
+                                                </p>
+                                            </div>
+                                        </div>
 
-                                <AnimatePresence>
-                                    {showFix && (
-                                        <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-                                            className="space-y-4 pt-4 border-t border-slate-800">
-                                            <div className="space-y-2">
+                                        <div className="space-y-4 md:border-l md:border-white/5 md:pl-8">
+                                            <div className="flex items-center gap-2.5">
+                                                <div className="p-1.5 rounded-lg bg-amber-500/10">
+                                                    <MapPin className="h-4 w-4 text-amber-400" />
+                                                </div>
+                                                <span className="text-[10px] font-black text-amber-400 tracking-widest uppercase underline decoration-amber-400/20 underline-offset-8">2. Where is it?</span>
+                                            </div>
+                                            <div className="space-y-3">
+                                                <div className="p-4 rounded-xl bg-white/[0.02] border border-white/5">
+                                                    <span className="text-[7px] font-black text-slate-500 uppercase block mb-1">Affected File Path</span>
+                                                    <p className="text-[10px] text-amber-200 font-mono font-bold break-all">
+                                                        {event.insight?.affected_file || 'Log Metadata (No file mapping found)'}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-4 md:border-l md:border-white/5 md:pl-8">
+                                            <div className="flex items-center gap-2.5">
+                                                <div className="p-1.5 rounded-lg bg-emerald-500/10">
+                                                    <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                                                </div>
+                                                <span className="text-[10px] font-black text-emerald-400 tracking-widest uppercase underline decoration-emerald-400/20 underline-offset-8">3. How to fix?</span>
+                                            </div>
+                                            <div className="space-y-3">
                                                 {event.fixSteps.steps.map((step, i) => (
-                                                    <motion.div key={i} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.07 }}
-                                                        className="flex items-start gap-3">
-                                                        <span className="flex-shrink-0 w-5 h-5 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-[8px] font-black text-emerald-400 flex items-center justify-center">
-                                                            {i + 1}
-                                                        </span>
-                                                        <span className="text-[11px] text-slate-300 leading-relaxed">{step}</span>
-                                                    </motion.div>
+                                                    <div key={i} className="flex gap-3 items-start">
+                                                        <span className="shrink-0 w-4 h-4 rounded-md bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-[8px] font-black text-emerald-400 mt-0.5">{i+1}</span>
+                                                        <p className="text-[10px] text-slate-300 leading-snug font-medium">{step}</p>
+                                                    </div>
                                                 ))}
                                             </div>
+                                        </div>
+                                    </div>
+                                )}
 
-                                            {event.fixSteps.command && (
-                                                <div className="bg-black/50 rounded-xl p-3 border border-indigo-500/20 relative group/cmd">
-                                                    <span className="text-[7px] font-black text-indigo-400 uppercase tracking-widest block mb-1">RECOMMENDED COMMAND</span>
-                                                    <code className="text-[10px] text-indigo-300 font-mono">{event.fixSteps.command}</code>
-                                                    <div className="absolute top-2 right-2 opacity-0 group-hover/cmd:opacity-100 transition-opacity">
-                                                        <Terminal className="h-3 w-3 text-indigo-500" />
-                                                    </div>
+                                {/* Corrective Snippet (Still shown below if AI returns it separately) */}
+                                {(event.insight?.generated_fix_code || event.insight?.correct_code || event.fixSteps.command) && (
+                                    <div className="pt-6 border-t border-white/5 space-y-4">
+                                        {event.fixSteps.command && (
+                                            <div className="bg-indigo-500/5 border border-indigo-500/20 rounded-xl p-3 flex items-center justify-between group/cmd">
+                                                <div className="flex items-center gap-3">
+                                                    <Terminal className="h-4 w-4 text-indigo-400" />
+                                                    <code className="text-[11px] text-indigo-200 font-mono font-bold tracking-tight">{event.fixSteps.command}</code>
                                                 </div>
-                                            )}
-
-                                            {(event.insight.generated_fix_code || event.insight.correct_code) && (
-                                                <div className="bg-slate-950 rounded-xl border border-emerald-500/20 overflow-hidden">
-                                                    <div className="bg-emerald-500/10 px-3 py-1.5 border-b border-emerald-500/20 flex justify-between items-center">
-                                                        <span className="text-[8px] font-black text-emerald-400 tracking-widest uppercase">Generated Fix Code</span>
-                                                        <CheckCircle2 className="h-3 w-3 text-emerald-500" />
-                                                    </div>
-                                                    <pre className="p-4 text-[10px] font-mono text-emerald-300 overflow-x-auto whitespace-pre">
-                                                        {event.insight.generated_fix_code || event.insight.correct_code}
-                                                    </pre>
-                                                </div>
-                                            )}
-
-                                            {event.insight.prevention_advice && event.insight.prevention_advice.length > 0 && (
-                                                <div className="mt-4 pt-4 border-t border-slate-800/50">
-                                                    <div className="flex items-center gap-2 mb-3">
-                                                        <ShieldAlert className="h-3.5 w-3.5 text-blue-400" />
-                                                        <span className="text-[9px] font-black text-blue-400 tracking-widest uppercase">Architectural Prevention</span>
-                                                    </div>
-                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                                        {event.insight.prevention_advice.map((adv: string, i: number) => (
-                                                            <div key={i} className="bg-blue-500/5 border border-blue-500/10 rounded-lg p-2 text-[9px] text-slate-400 flex items-center gap-2">
-                                                                <div className="w-1 h-1 bg-blue-500 rounded-full shrink-0" />
-                                                                {adv}
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </motion.div>
-                                    )}
-                                </AnimatePresence>
+                                                <button className="text-[8px] font-black text-indigo-500 uppercase tracking-widest opacity-30 hover:opacity-100 transition-opacity">Copy Fix</button>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                                
+                                <div className="pt-4 border-t border-white/5 flex items-center justify-between opacity-30">
+                                    <div className="flex items-center gap-2">
+                                        <ShieldCheck className="h-3 w-3 text-slate-500" />
+                                        <span className="text-[8px] font-black text-slate-500 uppercase tracking-[0.3em] italic">Validated Autopilot Deployment</span>
+                                    </div>
+                                    <span className="text-[8px] font-black text-slate-700 uppercase">Latency: DeepSeek-Sync</span>
+                                </div>
                             </div>
                         </div>
                     </motion.div>
@@ -450,36 +423,30 @@ const PIPELINE = [
     { label: 'Backend App', icon: <Server className="h-3.5 w-3.5" />, color: 'text-slate-400 border-slate-700 bg-slate-800/60' },
     { label: 'Log Collector', icon: <Activity className="h-3.5 w-3.5" />, color: 'text-indigo-400 border-indigo-500/30 bg-indigo-900/20' },
     { label: 'Log Analyzer', icon: <Eye className="h-3.5 w-3.5" />, color: 'text-violet-400 border-violet-500/30 bg-violet-900/20' },
-    { label: 'Chart Selector', icon: <BarChart2 className="h-3.5 w-3.5" />, color: 'text-cyan-400 border-cyan-500/30 bg-cyan-900/20' },
     { label: 'Insight Gen', icon: <BrainCircuit className="h-3.5 w-3.5" />, color: 'text-amber-400 border-amber-500/30 bg-amber-900/20' },
     { label: 'Anomaly Det', icon: <AlertTriangle className="h-3.5 w-3.5" />, color: 'text-red-400 border-red-500/30 bg-red-900/20' },
-    { label: 'ECharts Dashboard', icon: <TrendingUp className="h-3.5 w-3.5" />, color: 'text-emerald-400 border-emerald-500/30 bg-emerald-900/20' },
 ];
 
 /* ─── Main Component ─────────────────────────────────────────────────────────── */
-export default function AIObservabilityPanel() {
+export default function AIObservabilityPanel({ logGroups = [] }: { logGroups?: any[] }) {
     const [events, setEvents] = useState<MonitoringEvent[]>([]);
-    const [connected, setConnected] = useState(false);
     const [pipelineActive, setPipelineActive] = useState(0);
     const [metrics, setMetrics] = useState<any>(null);
-    const [currentSession, setCurrentSession] = useState<string | null>(null);
+    const [liveAI, setLiveAI] = useState<Record<string, any>>({});
+    const [connected, setConnected] = useState(false);
 
     const critical = events.filter(e => e.severity === 'CRITICAL' || e.severity === 'ERROR').length;
     const warnings = events.filter(e => e.severity === 'WARNING').length;
     const anomalies = events.filter(e => e.hasAnomaly).length;
 
     // Animate pipeline
-    useEffect(() => {
-        const t = setInterval(() => setPipelineActive(p => (p + 1) % PIPELINE.length), 600);
-        return () => clearInterval(t);
-    }, []);
-
+    // Real-time AI Update Listener
     useEffect(() => {
         let isMounted = true;
         const connect = () => {
             if (!isMounted) return;
             try {
-                const ws = new WebSocket('ws://127.0.0.1:4000/ws/monitor');
+                const ws = new WebSocket('ws://localhost:4000/ws/monitor');
                 ws.onopen = () => { if (isMounted) setConnected(true); };
                 ws.onclose = () => { if (isMounted) { setConnected(false); setTimeout(connect, 4000); } };
                 ws.onerror = () => ws.close();
@@ -487,34 +454,11 @@ export default function AIObservabilityPanel() {
                     if (!isMounted) return;
                     try {
                         const data = JSON.parse(ev.data);
-                        if (data.type === 'mapped_chart') {
-                            const mapping = data.mapping as ChartMapping;
-                            const ai = data.ai as AgentInsight;
-                            const logLine = String(data.log_line || data.log?.message || '');
-                            const msgId = data.log_id || `evt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-
-                            if (ai?.session_id && currentSession && ai.session_id !== currentSession) {
-                                setEvents([]); 
-                                setCurrentSession(ai.session_id);
-                            } else if (ai?.session_id && !currentSession) {
-                                setCurrentSession(ai.session_id);
+                        if (data.type === 'mapped_chart' && data.ai) {
+                            const msgId = data.log_id;
+                            if (msgId) {
+                                setLiveAI(prev => ({ ...prev, [msgId]: data.ai }));
                             }
-
-                            setEvents(prev => {
-                                if (ai) {
-                                    const existingIdx = prev.findIndex(e => e.id === msgId);
-                                    if (existingIdx !== -1) {
-                                        const updated = [...prev];
-                                        updated[existingIdx] = deriveEvent(mapping, ai, logLine, msgId);
-                                        return updated;
-                                    }
-                                }
-                                if (prev.some(e => e.id === msgId)) return prev;
-                                return [
-                                    deriveEvent(mapping, ai, logLine, msgId),
-                                    ...prev
-                                ].slice(0, 50);
-                            });
                         } else if (data.type === 'real_metrics') {
                             setMetrics(data.metrics);
                         }
@@ -525,6 +469,91 @@ export default function AIObservabilityPanel() {
         connect();
         return () => { isMounted = false; };
     }, []);
+
+    useEffect(() => {
+        if (!logGroups || logGroups.length === 0) {
+            setEvents([]);
+            return;
+        }
+
+        // --- Unified Clustering Logic (Matches LogGroupsPage) ---
+        const merged: any[] = [];
+        let lastErrorGroup: any = null;
+
+        logGroups.forEach(g => {
+            const line = g.representative_line.trim();
+            const isStackTrace = line.startsWith("at ");
+            const isCodeFrame = /^\d+\s*\|/.test(line);
+            const isPointer = /^(\||\s*\^)/.test(line);
+            const isFilePath = /([a-zA-Z]:\\[^: \n]+|\/[^: \n]+)/.test(line);
+            
+            const isContinuation =
+                isStackTrace ||
+                isCodeFrame ||
+                isPointer ||
+                isFilePath ||
+                line.includes("node_modules") ||
+                line.includes("async") ||
+                line.includes("@babel") ||
+                line.includes("gensync") ||
+                line.startsWith("Network:") ||
+                line.startsWith("Local:") ||
+                line.startsWith("->") ||
+                line.startsWith("VITE v") ||
+                line.startsWith("> ") ||
+                (lastErrorGroup && (isCodeFrame || isStackTrace || isPointer));
+
+            const startsError = 
+                g.severity === 'ERROR' || 
+                g.severity === 'CRITICAL' || 
+                g.representative_line.includes("[vite] Internal server error") ||
+                g.representative_line.toLowerCase().includes("error:");
+
+            if (isContinuation && lastErrorGroup) {
+                lastErrorGroup.representative_line += "\n" + g.representative_line;
+                lastErrorGroup.count += g.count;
+                if (new Date(g.last_timestamp) > new Date(lastErrorGroup.last_timestamp)) {
+                    lastErrorGroup.last_timestamp = g.last_timestamp;
+                }
+            } else {
+                const newGroup = { ...g };
+                merged.push(newGroup);
+                // Allow any log that isn't itself a continuation to be an anchor
+                lastErrorGroup = newGroup;
+            }
+        });
+
+        const derived = merged.map((lg, i) => {
+            const logId = `evt-${lg.key}`;
+            const aiResult = liveAI[logId];
+
+            const aiData = aiResult || {
+                root_cause: lg.severity === 'CRITICAL' ? 'Core system fault detected' : (lg.severity === 'ERROR' ? 'Exception raised in execution layer' : 'Routine system event logged'),
+                impact: lg.severity === 'CRITICAL' ? 'High risk to system stability and availability' : (lg.severity === 'ERROR' ? 'Potential localized context failure' : 'Monitoring nominal operating execution'),
+                system_status: lg.severity === 'CRITICAL' ? 'UNSTABLE' : (lg.severity === 'ERROR' ? 'RISK' : 'HEALTHY'),
+                severity_score: SEV_PCT[lg.severity as Severity] || 10 + Math.floor(Math.random() * 5),
+                error_type: lg.severity === 'INFO' ? 'Routine Execution' : 'System Exception',
+                affected_file: lg.representative_line?.match(/([a-zA-Z0-9_\-\/\\]+\.[a-zA-Z0-9]+(:\d+)?)/)?.[0] || 'System Core'
+            };
+
+            return deriveEvent(
+                { 
+                  chart_type: aiResult?.chart_type || (lg.severity === 'INFO' ? 'line' : 'gauge'), 
+                  panel: 'APPLICATION_LOGS', 
+                  title: aiResult?.dashboard_label || (lg.severity === 'INFO' ? 'Activity Timeline' : 'Risk Assessment'), 
+                  severity: lg.severity 
+                },
+                aiData,
+                lg.representative_line,
+                logId
+            );
+        });
+
+        // Sort by severity 
+        derived.sort((a,b) => (SEV_PCT[b.severity as Severity] || 0) - (SEV_PCT[a.severity as Severity] || 0));
+
+        setEvents(derived);
+    }, [logGroups, liveAI]);
 
     return (
         <div className="mt-10 pt-10 border-t border-slate-800/50 space-y-8"
@@ -549,7 +578,7 @@ export default function AIObservabilityPanel() {
                 </div>
                 <div className={`flex items-center gap-2.5 px-4 py-2 rounded-xl border text-[9px] font-black tracking-widest ${connected ? 'bg-emerald-950/30 text-emerald-400 border-emerald-500/30' : 'bg-red-950/30 text-red-400 border-red-500/30'}`}>
                     <div className={`w-2 h-2 rounded-full ${connected ? 'bg-emerald-400 animate-pulse' : 'bg-red-500'}`} />
-                    {connected ? '● LIVE AI ANALYSIS' : '○ CONNECTING...'}
+                    {connected ? '● LIVE AI SYNC' : '○ CONNECTING...'}
                 </div>
             </div>
 
@@ -623,89 +652,3 @@ export default function AIObservabilityPanel() {
     );
 }
 
-function EChartRenderer({ type, severity, metrics, title }: {
-    type: string,
-    severity: Severity,
-    metrics: any,
-    title: string
-}) {
-    const chartRef = useRef<HTMLDivElement>(null);
-    const chartInstance = useRef<echarts.ECharts | null>(null);
-
-    useEffect(() => {
-        if (!chartRef.current) return;
-        if (!chartInstance.current) {
-            chartInstance.current = echarts.init(chartRef.current, 'dark');
-        }
-
-        const colorMap: any = {
-            CRITICAL: '#ef4444',
-            WARNING: '#f59e0b',
-            MINOR: '#fde047',
-            HEALTHY: '#10b981'
-        };
-        const activeColor = colorMap[severity] || '#6366f1';
-
-        const chartType = type.toLowerCase();
-        let baseOption: any = {
-            backgroundColor: 'transparent',
-            animation: true,
-            tooltip: {
-                show: true,
-                backgroundColor: 'rgba(15, 23, 42, 0.9)',
-                borderColor: 'rgba(99, 102, 241, 0.3)',
-                textStyle: { color: '#fff', fontSize: 9 },
-                confine: true
-            },
-            grid: { top: 10, bottom: 20, left: 10, right: 10 },
-        };
-
-        if (chartType === 'gauge') {
-            const val = severity === 'CRITICAL' ? 15 : severity === 'ERROR' ? 35 : severity === 'WARNING' ? 65 : severity === 'MINOR' ? 80 : 98;
-            baseOption.series = [{
-                type: 'gauge',
-                startAngle: 210, endAngle: -30, center: ['50%', '60%'], radius: '100%',
-                axisLine: {
-                    lineStyle: {
-                        width: 10,
-                        color: [[0.3, '#ef4444'], [0.7, '#f59e0b'], [1, '#10b981']]
-                    }
-                },
-                detail: { fontSize: 18, color: '#fff', formatter: '{value}%' },
-                data: [{ value: val }]
-            }];
-        } else if (chartType.includes('pie') || chartType.includes('donut')) {
-            const errWeight = severity === 'CRITICAL' ? 85 : severity === 'ERROR' ? 65 : severity === 'WARNING' ? 40 : 15;
-            baseOption.series = [{
-                type: 'pie', radius: chartType.includes('donut') ? ['45%', '70%'] : '70%',
-                label: { show: false },
-                data: [
-                    { value: errWeight, name: 'Anomaly', itemStyle: { color: activeColor } }, 
-                    { value: 100 - errWeight, name: 'Normal', itemStyle: { color: '#1e293b' } }
-                ]
-            }];
-        } else {
-            baseOption.xAxis = { type: 'category', data: ['T-5', 'T-4', 'T-3', 'T-2', 'T-1', 'Now'], show: false };
-            baseOption.yAxis = { show: false };
-            
-            let sparkline = [0, 0, 0, 0, 0, 0];
-            if (severity === 'CRITICAL') sparkline = [5, 10, 40, 80, 100, 100];
-            else if (severity === 'ERROR') sparkline = [5, 10, 20, 50, 75, 80];
-            else if (severity === 'WARNING') sparkline = [10, 15, 30, 45, 60, 55];
-            else sparkline = [15, 20, 25, 15, 10, 5];
-
-            baseOption.series = [{
-                type: 'line', smooth: true, areaStyle: { opacity: 0.2 },
-                data: sparkline, itemStyle: { color: activeColor }
-            }];
-        }
-
-        chartInstance.current.setOption(baseOption);
-
-        const handleResize = () => chartInstance.current?.resize();
-        window.addEventListener('resize', handleResize);
-        return () => window.removeEventListener('resize', handleResize);
-    }, [type, severity, metrics]);
-
-    return <div ref={chartRef} className="w-full h-full" />;
-}

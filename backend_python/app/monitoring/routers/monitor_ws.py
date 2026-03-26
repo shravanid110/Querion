@@ -1,4 +1,4 @@
-﻿import json
+import json
 import structlog
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from typing import List, Dict
@@ -79,9 +79,14 @@ async def websocket_endpoint(websocket: WebSocket):
             
             # ── Log Mapping & AI Analysis ───────────────────────────────────
             try:
-                from app.services.log_chart_mapper import analyze_log_and_assign_chart, explain_log_issue
+                from app.services.log_chart_mapper import analyze_log_and_assign_chart
+                from app.ai.log_analyzer import analyze_log
+                
                 chart_mapping = analyze_log_and_assign_chart(message_json)
-                explanation = explain_log_issue(message_json)
+                
+                # Use DeepSeek for high-fidelity analysis
+                log_text = message_json.get("message") or message_json.get("data") or str(message_json)
+                explanation = await analyze_log(log_text)
                 
                 # Update real-time metrics object
                 metrics_engine.process_log(message_json)
@@ -90,6 +95,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 await manager.broadcast_to_user(user_id, {
                     "type": "mapped_chart",
                     "log": message_json,
+                    "log_id": f"evt-{message_json.get('key', 'unknown')}", # Match frontend's lg.key format
                     "mapping": chart_mapping,
                     "ai": explanation
                 })

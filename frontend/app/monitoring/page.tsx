@@ -23,10 +23,17 @@ import {
     MicOff,
     Globe,
     CheckCircle,
-    AlertCircle,
     Loader2,
     Volume2,
+    Zap,
+    ShieldAlert,
+    AlertCircle,
+    CheckCircle2,
+    Info,
+    FileText,
 } from "lucide-react";
+import { motion } from "framer-motion";
+import ReactMarkdown from "react-markdown";
 import DashboardTab from "@/components/monitoring/DashboardTab";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -416,6 +423,249 @@ function VoiceBadge({ lang, status }: { lang?: string; status: "idle" | "recordi
     return null;
 }
 
+// ─── Real Time Log Fetching Tab ─────────────────────────────────────────────
+
+interface LogGroupV2 {
+    key: string;
+    representative_line: string;
+    count: number;
+    last_timestamp: string;
+    severity: "CRITICAL" | "ERROR" | "WARNING" | "INFO";
+}
+
+interface ErrorAnalysisV2 {
+    success: boolean;
+    explanation: string;
+    severity_level: string;
+    raw_ai_text: string;
+}
+
+function RealTimeLogFetchingTab({ projectId }: { projectId: number }) {
+    const [groups, setGroups] = useState<LogGroupV2[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [analyzing, setAnalyzing] = useState<string | null>(null);
+    const [analysisResults, setAnalysisResults] = useState<Record<string, ErrorAnalysisV2>>({});
+    const [showRaw, setShowRaw] = useState<Record<string, boolean>>({});
+
+    const fetchGroups = useCallback(async () => {
+        try {
+            const res = await axios.get(`${API}/api/monitor/log-groups/${projectId}`, { timeout: 15000 });
+            setGroups(res.data);
+        } catch (e) {
+            console.error("Failed to fetch log groups:", e);
+        } finally {
+            setLoading(false);
+        }
+    }, [projectId]);
+
+    useEffect(() => {
+        fetchGroups();
+        const interval = setInterval(fetchGroups, 5000);
+        return () => clearInterval(interval);
+    }, [fetchGroups]);
+
+    // Automatic trigger for errors
+    useEffect(() => {
+        groups.forEach(group => {
+            const isError = group.severity === "ERROR" || group.severity === "CRITICAL";
+            if (isError && !analysisResults[group.key] && analyzing !== group.key) {
+                runAnalysis(group.representative_line, group.key);
+            }
+        });
+    }, [groups, analysisResults, analyzing]);
+
+    const runAnalysis = async (log: string, key: string) => {
+        setAnalyzing(key);
+        try {
+            const res = await axios.post(`${API}/api/monitor/analyze-error-v2`, { log }, { timeout: 180000 });
+            setAnalysisResults(prev => ({ ...prev, [key]: res.data }));
+        } catch (e: any) {
+            console.error("Analysis failed", e);
+            setAnalysisResults(prev => ({ 
+                ...prev, 
+                [key]: { 
+                    success: false,
+                    explanation: `### 🛑 AI Analysis Timeout\n\nDeepSeek took too long to respond or the backend could not be reached.\n\n**Error:** ${e.message}\n\n**Common Fixes:**\n1. Check if Ollama is running and has downloaded the model.\n2. Verify python backend is running.\n3. Wait a bit longer, local DeepSeek inference can be slow.`,
+                    severity_level: "WARNING",
+                    raw_ai_text: ""
+                } as any
+            }));
+        } finally {
+            setAnalyzing(null);
+        }
+    };
+
+    return (
+        <div className="p-6 space-y-6">
+            <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                    <Zap className="h-5 w-5 text-indigo-400" />
+                    <h2 className="text-xl font-bold text-white tracking-tight text-indigo-100 italic">REAL-TIME LOG INTELLIGENCE</h2>
+                </div>
+                <div className="flex items-center gap-2 text-xs font-mono text-slate-500">
+                    <RefreshCw className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`} />
+                    LIVE CLUSTERING ACTIVE
+                </div>
+            </div>
+
+            {loading && groups.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20 gap-4">
+                    <Loader2 className="h-8 w-8 animate-spin text-indigo-500" />
+                    <p className="text-slate-500 font-bold uppercase tracking-widest text-xs">Syncing Pattern Registry...</p>
+                </div>
+            ) : groups.length === 0 ? (
+                <div className="bg-slate-900/40 border border-dashed border-slate-800 rounded-3xl py-20 text-center">
+                    <Terminal className="h-12 w-12 text-slate-800 mx-auto mb-4" />
+                    <p className="text-slate-500 font-bold">Waiting for logs to cluster...</p>
+                </div>
+            ) : (
+                <div className="space-y-4">
+                    {groups.map((group) => {
+                        const isError = group.severity === "ERROR" || group.severity === "CRITICAL";
+                        const color = isError ? "red" : group.severity === "WARNING" ? "yellow" : "blue";
+                        const analysis = analysisResults[group.key];
+
+                        return (
+                            <motion.div
+                                layout
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                key={group.key}
+                                className={`bg-slate-900/60 border rounded-2xl p-5 hover:bg-slate-900 transition-all ${
+                                    isError ? "border-red-500/20 hover:border-red-500/40" : "border-slate-800 hover:border-indigo-500/30"
+                                }`}
+                            >
+                                <div className="flex items-start gap-4">
+                                    <div className="pt-1">
+                                        <div className={`p-2 rounded-xl bg-${color}-500/10`}>
+                                            <AlertCircle className={`h-5 w-5 text-${color}-400`} />
+                                        </div>
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <div className="flex items-center gap-2">
+                                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border tracking-widest ${
+                                                    isError ? "bg-red-500/20 text-red-400 border-red-500/30" : "bg-indigo-500/10 text-indigo-400 border-indigo-500/20"
+                                                }`}>
+                                                    {group.severity}
+                                                </span>
+                                                <span className="text-[10px] font-mono text-slate-500">{new Date(group.last_timestamp).toLocaleTimeString()}</span>
+                                            </div>
+                                            <div className="bg-slate-950 px-2 py-1 rounded-lg border border-slate-800 flex items-center gap-2">
+                                                <span className="text-xs font-black text-white">{group.count}</span>
+                                                <span className="text-[8px] font-black text-slate-600 uppercase">Hits</span>
+                                            </div>
+                                        </div>
+
+                                        <pre className="mt-3 p-3 bg-black/40 rounded-xl border border-slate-800 text-[11px] font-mono text-slate-300 overflow-x-auto whitespace-pre-wrap leading-relaxed">
+                                            {group.representative_line}
+                                        </pre>
+
+                                        {analyzing === group.key && (
+                                            <div className="mt-4 flex items-center gap-3 py-3 px-4 bg-slate-900/40 rounded-xl border border-indigo-500/20 shadow-lg shadow-indigo-500/5">
+                                                <Loader2 className="h-4 w-4 animate-spin text-indigo-500" />
+                                                <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest animate-pulse">DeepSeek: Analyzing Root Cause...</span>
+                                            </div>
+                                        )}
+
+                                        {analysis && (
+                                            <div className="mt-6 border-t border-slate-800/60 pt-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                                                <div className="flex items-center gap-2 mb-6">
+                                                    <div className="h-2 w-2 rounded-full bg-indigo-500 animate-pulse" />
+                                                    <span className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.4em]">SRE Agent: GPT-4o Intelligence</span>
+                                                </div>
+
+                                                <div className="bg-slate-950/40 border border-slate-800/80 rounded-3xl p-6 shadow-2xl overflow-hidden relative group">
+                                                    <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                                                        <Zap className="h-24 w-24 text-indigo-500" />
+                                                    </div>
+                                                    
+                                                    <div className="relative prose prose-invert prose-xs max-w-none prose-pre:bg-black/60 prose-pre:border prose-pre:border-slate-800">
+                                                        <ReactMarkdown 
+                                                            components={{
+                                                                code({ node, inline, className, children, ...props }: any) {
+                                                                    const match = /language-(\w+)/.exec(className || '');
+                                                                    return !inline && match ? (
+                                                                        <div className="relative my-4 group/code">
+                                                                            <div className="absolute top-2 right-2 flex gap-2">
+                                                                                <span className="text-[8px] font-black text-slate-600 uppercase tracking-widest bg-slate-900/80 px-2 py-0.5 rounded border border-slate-800">{match[1]}</span>
+                                                                            </div>
+                                                                            <pre className="!bg-black/80 !border-slate-800 !rounded-2xl !p-5 !text-[11px] font-mono leading-relaxed" {...props}>
+                                                                                {children}
+                                                                            </pre>
+                                                                        </div>
+                                                                    ) : (
+                                                                        <code className="bg-indigo-500/10 text-indigo-300 px-1.5 py-0.5 rounded font-mono text-[10px]" {...props}>
+                                                                            {children}
+                                                                        </code>
+                                                                    );
+                                                                },
+                                                                h3: ({children}: any) => <h3 className="text-sm font-black text-white uppercase tracking-widest mt-6 mb-3 flex items-center gap-2">
+                                                                    <div className="w-1 h-3 bg-indigo-500 rounded-full" />
+                                                                    {children}
+                                                                </h3>,
+                                                                h4: ({children}: any) => <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest mt-4 mb-2">{children}</h4>,
+                                                                p: ({children}: any) => <p className="text-xs text-slate-300 leading-relaxed mb-4">{children}</p>,
+                                                                ul: ({children}: any) => <ul className="space-y-2 mb-4 list-none p-0">{children}</ul>,
+                                                                li: ({children}: any) => <li className="flex gap-3 items-start text-xs text-slate-400">
+                                                                    <div className="mt-1.5 h-1 w-1 rounded-full bg-indigo-500/50 flex-shrink-0" />
+                                                                    {children}
+                                                                </li>
+                                                            }}
+                                                        >
+                                                            {analysis.explanation}
+                                                        </ReactMarkdown>
+                                                    </div>
+
+                                                    <div className="mt-8 flex items-center justify-between border-t border-slate-800/50 pt-4">
+                                                        <div className="flex items-center gap-6 text-[8px] font-black text-slate-700 uppercase tracking-[0.2em] italic">
+                                                            <div className="flex items-center gap-2">
+                                                                <div className="h-1 w-1 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+                                                                <span>ANALYSIS COMPLETE</span>
+                                                            </div>
+                                                            <span>ENGINE: OPENROUTER / GPT-4O</span>
+                                                        </div>
+                                                        
+                                                        {analysis.raw_ai_text && (
+                                                            <button 
+                                                                onClick={() => setShowRaw(prev => ({ ...prev, [group.key]: !prev[group.key] }))}
+                                                                className="flex items-center gap-2 text-[9px] font-black text-indigo-500/60 hover:text-indigo-400 uppercase tracking-widest transition-all group/raw"
+                                                            >
+                                                                <Terminal className="h-3 w-3 group-hover/raw:rotate-12 transition-transform" />
+                                                                {showRaw[group.key] ? "Collapse Log Trace" : "View Model Trace"}
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </div>
+
+                                                {showRaw[group.key] && analysis.raw_ai_text && (
+                                                    <motion.div 
+                                                        initial={{ opacity: 0, height: 0 }}
+                                                        animate={{ opacity: 1, height: 'auto' }}
+                                                        className="mt-4 p-5 bg-black/60 rounded-3xl border border-slate-800/80 shadow-inner"
+                                                    >
+                                                        <div className="flex items-center gap-2 mb-4">
+                                                            <div className="h-1 w-1 rounded-full bg-slate-700" />
+                                                            <h5 className="text-[9px] font-black text-slate-600 uppercase tracking-[0.3em]">RAW DEEPSEEK STREAM</h5>
+                                                        </div>
+                                                        <pre className="text-[10px] font-mono text-cyan-500/60 whitespace-pre-wrap leading-relaxed max-h-[400px] overflow-y-auto custom-scrollbar">
+                                                            {analysis.raw_ai_text}
+                                                        </pre>
+                                                    </motion.div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </motion.div>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+    );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function MonitoringPage() {
@@ -425,7 +675,7 @@ export default function MonitoringPage() {
 
     const [projects, setProjects] = useState<Project[]>([]);
     const [selectedProject, setSelectedProject] = useState<Project | null>(null);
-    const [activeTab, setActiveTab] = useState<"chat" | "logs" | "files" | "dashboard">("chat");
+    const [activeTab, setActiveTab] = useState<"chat" | "logs" | "files" | "dashboard" | "realtime-logs">("chat");
     const [logs, setLogs] = useState<LogLine[]>([]);
     const [files, setFiles] = useState<{ file_path: string }[]>([]);
     const [selectedFile, setSelectedFile] = useState<string | null>(null);
@@ -493,19 +743,33 @@ export default function MonitoringPage() {
         return () => clearInterval(interval);
     }, [fetchProjects]);
 
+    // Store last known log count to prevent redundant fetches
+    const lastMetaRef = useRef({ count: -1, session: "" });
+
     // ── Fetch logs for selected project ────────────────────────────────────────
     const fetchProjectDetail = useCallback(async (project: Project) => {
         try {
+            // 1. Fetch lightweight meta
+            const metaRes = await axios.get(`${API}/api/monitor/logs-meta/${project.id}`, { timeout: 8000 });
+            const currentMeta = metaRes.data;
+            const currentSession = project.session_id || "initial";
+
+            // If session is unchanged and log count is unchanged, skip full payload fetch!
+            if (lastMetaRef.current.session === currentSession && lastMetaRef.current.count === currentMeta.count) {
+                return;
+            }
+
+            // 2. State has changed, fetch heavy logs and files
             const [logsRes, filesRes, projectsRes] = await Promise.all([
                 axios.get(`${API}/api/monitor/logs/${project.id}`, { timeout: 8000 }),
                 axios.get(`${API}/api/monitor/files/${project.id}`, { timeout: 8000 }),
                 axios.get(`${API}/api/monitor/projects/${USER_ID}`, { timeout: 8000 })
             ]);
             
+            lastMetaRef.current = { count: currentMeta.count, session: currentSession };
+            
             const latestProject = (projectsRes.data as Project[]).find(p => p.id === project.id);
             if (latestProject) {
-                // Stabilized session change detection: 
-                // Only clear if the session ID has explicitly changed from a known ID to a new one
                 const hasSessionChanged = project.session_id && 
                                         latestProject.session_id && 
                                         project.session_id !== latestProject.session_id;
@@ -937,6 +1201,7 @@ export default function MonitoringPage() {
                         <div className="flex border-b border-slate-800 bg-slate-900">
                             {[
                                 { id: "chat", icon: MessageSquare, label: "AI Chat" },
+                                { id: "realtime-logs", icon: Zap, label: "Real Time Logs" },
                                 { id: "logs", icon: Terminal, label: "Live Logs" },
                                 { id: "dashboard", icon: Activity, label: "Dashboard" },
                                 { id: "files", icon: FileCode, label: "File Viewer" },
@@ -1145,6 +1410,13 @@ export default function MonitoringPage() {
                                     🎤 Voice supports 100+ languages · auto-translates to English · powered by Whisper
                                 </p>
                             </div>
+                        </div>
+
+                        {/* ── Real Time Logs Tab ── */}
+                        <div className={activeTab === "realtime-logs" ? "flex-1 overflow-y-auto bg-slate-950" : "hidden"}>
+                            {selectedProject && (
+                                <RealTimeLogFetchingTab projectId={selectedProject.id} />
+                            )}
                         </div>
 
                         {/* ── Dashboard Tab ── */}
