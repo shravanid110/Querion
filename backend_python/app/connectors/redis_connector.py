@@ -23,7 +23,7 @@ class RedisConnector(BaseConnector):
         
         # 1. Fast socket check to prevent long hangs on unreachable hosts
         try:
-            with socket.create_connection((host, port), timeout=3):
+            with socket.create_connection((host, port), timeout=15):
                 print(f"DEBUG: [REDIS] Port {port} is open.")
         except Exception as e:
             print(f"DEBUG: [REDIS] Port unreachable: {e}")
@@ -73,7 +73,7 @@ class RedisConnector(BaseConnector):
         if "rlwy.net" in host.lower() and port != 6380:
             use_ssl = False
 
-        timeout = 5 if is_test else 10
+        timeout = 15 if is_test else 15
 
         def create_client(ssl_enabled):
             return redis.Redis(

@@ -94,7 +94,7 @@ export const DatabaseConnectionForm = ({ dbType, onClose }: DatabaseConnectionFo
             };
 
             const response = await axios.post(`${API_Base}/api/connections/test`, payload, {
-                timeout: 5000 // Strict 5s timeout
+                timeout: 15000 // Increased to 15s to avoid premature timeouts
             });
 
             if (response.data.success) {

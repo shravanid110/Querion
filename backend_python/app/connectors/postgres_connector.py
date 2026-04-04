@@ -37,7 +37,7 @@ class PostgresConnector(BaseConnector):
                 dbname=credentials.get('database'),
                 user=credentials.get('username'),
                 password=credentials.get('password'),
-                connect_timeout=3,
+                connect_timeout=15,
                 sslmode=ssl_mode
             )
             conn.close()

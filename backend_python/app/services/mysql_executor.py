@@ -15,7 +15,7 @@ class MySQLService:
                 user=params.get('user'),
                 password=params.get('password'),
                 database=params.get('database'),
-                connect_timeout=5,
+                connect_timeout=15,
                 ssl_disabled=False,
                 ssl_verify_cert=False # Equivalent to rejectUnauthorized: false
             )
@@ -90,7 +90,7 @@ class MySQLService:
             if len(table_names) > 100:
                 all_tables_header += "... (and more)"
 
-            schema_context = f"DATABASE SCHEMA:\nTotal Tables Found: {len(table_names)}\nAll Table Names: {all_tables_header}\n\nCOLUMN DETAILS (for first 40 tables):\n"
+            schema_context: str = f"DATABASE SCHEMA:\nTotal Tables Found: {len(table_names)}\nAll Table Names: {all_tables_header}\n\nCOLUMN DETAILS (for first 40 tables):\n"
 
             for table in table_names[:60]:
                 try:

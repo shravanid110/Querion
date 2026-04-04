@@ -11,7 +11,9 @@ class MariaDBConnector(BaseConnector):
                 database=credentials.get('database'),
                 user=credentials.get('username'),
                 password=credentials.get('password'),
-                connect_timeout=5
+                connect_timeout=15,
+                ssl_disabled=False,
+                ssl_verify_cert=False
             )
             conn.close()
             return {"success": True}
@@ -25,7 +27,9 @@ class MariaDBConnector(BaseConnector):
                 port=credentials.get('port', 3306),
                 database=credentials.get('database'),
                 user=credentials.get('username'),
-                password=credentials.get('password')
+                password=credentials.get('password'),
+                ssl_disabled=False,
+                ssl_verify_cert=False
             )
             cursor = conn.cursor()
             
@@ -58,7 +62,9 @@ class MariaDBConnector(BaseConnector):
                 port=credentials.get('port', 3306),
                 database=credentials.get('database'),
                 user=credentials.get('username'),
-                password=credentials.get('password')
+                password=credentials.get('password'),
+                ssl_disabled=False,
+                ssl_verify_cert=False
             )
             cursor = conn.cursor(dictionary=True)
             cursor.execute(query)

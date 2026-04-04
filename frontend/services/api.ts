@@ -44,7 +44,7 @@ export interface ConnectionParams {
 
 export const testConnection = async (params: ConnectionParams, signal?: AbortSignal) => {
     const response = await api.post('/connections/test', params, {
-        timeout: 5000,
+        timeout: 15000,
         signal: signal
     });
     return response.data;
