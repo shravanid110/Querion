@@ -28,6 +28,11 @@ function PasswordStrength({ password }: { password: string }) {
 }
 
 function VisualPanel() {
+    const [mounted, setMounted] = React.useState(false);
+    React.useEffect(() => {
+        setMounted(true);
+    }, []);
+
     return (
         <div className="relative flex flex-col justify-between h-full p-12 overflow-hidden">
             <div className="absolute top-[-20%] left-[-20%] w-[600px] h-[600px] bg-purple-600/20 rounded-full blur-[120px] pointer-events-none" />
@@ -43,7 +48,7 @@ function VisualPanel() {
                     <div className="absolute inset-0 flex items-center justify-center">
                         <motion.div animate={{ scale: [1, 1.08, 1], rotate: [0, 10, -10, 0] }} transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }} className="w-20 h-20 rounded-2xl bg-gradient-to-br from-purple-600 to-cyan-500 flex items-center justify-center shadow-[0_0_40px_rgba(167,139,250,0.5)]"><Database size={36} className="text-white" /></motion.div>
                     </div>
-                    {[{ angle: 30, icon: <Activity size={14} className="text-cyan-300" />, color: "from-cyan-500/30 to-cyan-600/10" }, { angle: 102, icon: <Shield size={14} className="text-purple-300" />, color: "from-purple-500/30 to-purple-600/10" }, { angle: 174, icon: <Zap size={14} className="text-yellow-300" />, color: "from-yellow-500/30 to-yellow-600/10" }, { angle: 246, icon: <CheckCircle2 size={14} className="text-emerald-300" />, color: "from-emerald-500/30 to-emerald-600/10" }, { angle: 318, icon: <Lock size={14} className="text-pink-300" />, color: "from-pink-500/30 to-pink-600/10" }].map((node, i) => {
+                    {mounted && [{ angle: 30, icon: <Activity size={14} className="text-cyan-300" />, color: "from-cyan-500/30 to-cyan-600/10" }, { angle: 102, icon: <Shield size={14} className="text-purple-300" />, color: "from-purple-500/30 to-purple-600/10" }, { angle: 174, icon: <Zap size={14} className="text-yellow-300" />, color: "from-yellow-500/30 to-yellow-600/10" }, { angle: 246, icon: <CheckCircle2 size={14} className="text-emerald-300" />, color: "from-emerald-500/30 to-emerald-600/10" }, { angle: 318, icon: <Lock size={14} className="text-pink-300" />, color: "from-pink-500/30 to-pink-600/10" }].map((node, i) => {
                         const rad = (node.angle * Math.PI) / 180;
                         const x = Math.cos(rad) * 110, y = Math.sin(rad) * 110;
                         return (
@@ -98,14 +103,14 @@ export default function SignupPage() {
             await register(name, email, password);
             router.push('/');
         } catch (err: any) {
-            setError(err?.response?.data?.detail || "Registration failed. Please try again.");
+            setError(err?.response?.data?.detail || err.message || "Registration failed. Please try again.");
         } finally {
             setLoading(false);
         }
     };
 
-    const ic = (field: string) => `w-full pt-6 pb-2 px-4 bg-white/5 rounded-xl border text-white text-sm outline-none transition-all duration-200 ${focused[field] ? 'border-purple-500/70 shadow-[0_0_0_3px_rgba(167,139,250,0.1)]' : 'border-white/10 hover:border-white/20'}`;
-    const lc = (field: string, val: string) => `absolute left-4 transition-all duration-200 pointer-events-none ${focused[field] || val ? 'top-2 text-[10px] font-bold text-purple-400 uppercase tracking-widest' : 'top-1/2 -translate-y-1/2 text-slate-500 text-sm'}`;
+    const ic = (field: string) => `w-full pt-6 pb-2 px-4 bg-white/5 rounded-xl border text-white text-sm outline-none transition-all duration-200 relative z-20 ${focused[field] ? 'border-purple-500/70 shadow-[0_0_0_3px_rgba(167,139,250,0.1)]' : 'border-white/10 hover:border-white/20'}`;
+    const lc = (field: string, val: string) => `absolute left-4 transition-all duration-200 pointer-events-none z-10 ${focused[field] || val ? 'top-2 text-[10px] font-bold text-purple-400 uppercase tracking-widest' : 'top-1/2 -translate-y-1/2 text-slate-500 text-sm'}`;
     const setF = (k: string, v: boolean) => setFocused(p => ({ ...p, [k]: v }));
 
     return (
@@ -139,20 +144,20 @@ export default function SignupPage() {
                         <div className="relative">
                             <label className={lc('name', name)}>Full Name</label>
                             <input type="text" value={name} onChange={e => setName(e.target.value)} onFocus={() => setF('name', true)} onBlur={() => setF('name', false)} className={ic('name')} required />
-                            <User size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none" />
+                            <User size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none z-30" />
                         </div>
                         {/* Email */}
                         <div className="relative">
                             <label className={lc('email', email)}>Email Address</label>
                             <input type="email" value={email} onChange={e => setEmail(e.target.value)} onFocus={() => setF('email', true)} onBlur={() => setF('email', false)} className={ic('email')} required />
-                            <Mail size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none" />
+                            <Mail size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none z-30" />
                         </div>
                         {/* Password */}
                         <div>
                             <div className="relative">
                                 <label className={lc('password', password)}>Password</label>
                                 <input type={showPassword ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} onFocus={() => setF('password', true)} onBlur={() => setF('password', false)} className={`${ic('password')} pr-12`} required />
-                                <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition-colors">{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button>
+                                <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition-colors z-30">{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button>
                             </div>
                             <PasswordStrength password={password} />
                         </div>
@@ -161,24 +166,24 @@ export default function SignupPage() {
                             <div className="relative">
                                 <label className={lc('confirm', confirm)}>Confirm Password</label>
                                 <input type={showConfirm ? "text" : "password"} value={confirm} onChange={e => setConfirm(e.target.value)} onFocus={() => setF('confirm', true)} onBlur={() => setF('confirm', false)} className={`${ic('confirm')} pr-12 ${confirm && password !== confirm ? '!border-red-500/50' : confirm && password === confirm ? '!border-emerald-500/40' : ''}`} required />
-                                <button type="button" onClick={() => setShowConfirm(!showConfirm)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition-colors">{showConfirm ? <EyeOff size={16} /> : <Eye size={16} />}</button>
+                                <button type="button" onClick={() => setShowConfirm(!showConfirm)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition-colors z-30">{showConfirm ? <EyeOff size={16} /> : <Eye size={16} />}</button>
                             </div>
                             {confirm && password !== confirm && <p className="text-[10px] text-red-400 font-bold mt-1.5">Passwords do not match</p>}
                             {confirm && password === confirm && <p className="text-[10px] text-emerald-400 font-bold mt-1.5 flex items-center gap-1"><CheckCircle2 size={10} /> Passwords match</p>}
                         </div>
                         {/* Terms */}
-                        <label className="flex items-start gap-3 cursor-pointer">
-                            <div onClick={() => setAgreed(!agreed)} className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 mt-0.5 transition-all duration-200 ${agreed ? 'bg-purple-600 border-purple-500' : 'border-white/20 bg-white/5'}`}>{agreed && <CheckCircle2 size={10} className="text-white fill-white" />}</div>
+                        <label className="flex items-start gap-3 cursor-pointer relative z-20">
+                            <span onClick={() => setAgreed(!agreed)} className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 mt-0.5 transition-all duration-200 ${agreed ? 'bg-purple-600 border-purple-500' : 'border-white/20 bg-white/5'}`}>{agreed && <CheckCircle2 size={10} className="text-white fill-white" />}</span>
                             <span className="text-slate-400 text-xs leading-relaxed select-none">I agree to the <Link href="/terms" className="text-purple-400 hover:text-purple-300 font-semibold">Terms of Service</Link> and <Link href="/privacy" className="text-purple-400 hover:text-purple-300 font-semibold">Privacy Policy</Link></span>
                         </label>
                         {/* Submit */}
-                        <motion.button type="submit" disabled={loading} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className="relative w-full h-12 rounded-xl font-bold text-white text-sm overflow-hidden group disabled:opacity-70 disabled:cursor-not-allowed mt-1">
+                        <motion.button type="submit" disabled={loading} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className="relative w-full h-12 rounded-xl font-bold text-white text-sm overflow-hidden group disabled:opacity-70 disabled:cursor-not-allowed mt-1 z-20">
                             <div className="absolute inset-0 bg-gradient-to-r from-purple-600 to-cyan-500 transition-all duration-300 group-hover:from-purple-500 group-hover:to-cyan-400" />
                             <span className="relative flex items-center justify-center gap-2">{loading ? <><Loader2 size={16} className="animate-spin" />Creating account...</> : <>Create Account <ArrowRight size={16} /></>}</span>
                         </motion.button>
                     </form>
-                    <p className="text-center text-slate-400 text-sm mt-6">Already have an account?{" "}<Link href="/login" className="font-bold text-purple-400 hover:text-purple-300 transition-colors">Sign in</Link></p>
-                    <div className="mt-8 flex items-center justify-center gap-2 text-slate-600 text-[11px]"><Shield size={12} /><span>Encrypted authentication · Stored securely</span></div>
+                    <p className="text-center text-slate-400 text-sm mt-6 relative z-20">Already have an account?{" "}<Link href="/login" className="font-bold text-purple-400 hover:text-purple-300 transition-colors">Sign in</Link></p>
+                    <div className="mt-8 flex items-center justify-center gap-2 text-slate-600 text-[11px] relative z-20"><Shield size={12} /><span>Encrypted authentication · Stored securely</span></div>
                 </motion.div>
             </div>
         </div>

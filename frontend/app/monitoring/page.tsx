@@ -449,7 +449,7 @@ function RealTimeLogFetchingTab({ projectId }: { projectId: number }) {
 
     const fetchGroups = useCallback(async () => {
         try {
-            const res = await axios.get(`${API}/api/monitor/log-groups/${projectId}`, { timeout: 15000 });
+            const res = await axios.get(`${API}/api/monitor/log-groups/${projectId}`, { timeout: 30000 });
             setGroups(res.data);
         } catch (e) {
             console.error("Failed to fetch log groups:", e);
@@ -481,9 +481,9 @@ function RealTimeLogFetchingTab({ projectId }: { projectId: number }) {
             setAnalysisResults(prev => ({ ...prev, [key]: res.data }));
         } catch (e: any) {
             console.error("Analysis failed", e);
-            setAnalysisResults(prev => ({ 
-                ...prev, 
-                [key]: { 
+            setAnalysisResults(prev => ({
+                ...prev,
+                [key]: {
                     success: false,
                     explanation: `### 🛑 AI Analysis Timeout\n\nDeepSeek took too long to respond or the backend could not be reached.\n\n**Error:** ${e.message}\n\n**Common Fixes:**\n1. Check if Ollama is running and has downloaded the model.\n2. Verify python backend is running.\n3. Wait a bit longer, local DeepSeek inference can be slow.`,
                     severity_level: "WARNING",
@@ -531,9 +531,8 @@ function RealTimeLogFetchingTab({ projectId }: { projectId: number }) {
                                 initial={{ opacity: 0, y: 10 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 key={group.key}
-                                className={`bg-slate-900/60 border rounded-2xl p-5 hover:bg-slate-900 transition-all ${
-                                    isError ? "border-red-500/20 hover:border-red-500/40" : "border-slate-800 hover:border-indigo-500/30"
-                                }`}
+                                className={`bg-slate-900/60 border rounded-2xl p-5 hover:bg-slate-900 transition-all ${isError ? "border-red-500/20 hover:border-red-500/40" : "border-slate-800 hover:border-indigo-500/30"
+                                    }`}
                             >
                                 <div className="flex items-start gap-4">
                                     <div className="pt-1">
@@ -544,9 +543,8 @@ function RealTimeLogFetchingTab({ projectId }: { projectId: number }) {
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-center justify-between mb-2">
                                             <div className="flex items-center gap-2">
-                                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border tracking-widest ${
-                                                    isError ? "bg-red-500/20 text-red-400 border-red-500/30" : "bg-indigo-500/10 text-indigo-400 border-indigo-500/20"
-                                                }`}>
+                                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border tracking-widest ${isError ? "bg-red-500/20 text-red-400 border-red-500/30" : "bg-indigo-500/10 text-indigo-400 border-indigo-500/20"
+                                                    }`}>
                                                     {group.severity}
                                                 </span>
                                                 <span className="text-[10px] font-mono text-slate-500">{new Date(group.last_timestamp).toLocaleTimeString()}</span>
@@ -579,9 +577,9 @@ function RealTimeLogFetchingTab({ projectId }: { projectId: number }) {
                                                     <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
                                                         <Zap className="h-24 w-24 text-indigo-500" />
                                                     </div>
-                                                    
+
                                                     <div className="relative prose prose-invert prose-xs max-w-none prose-pre:bg-black/60 prose-pre:border prose-pre:border-slate-800">
-                                                        <ReactMarkdown 
+                                                        <ReactMarkdown
                                                             components={{
                                                                 code({ node, inline, className, children, ...props }: any) {
                                                                     const match = /language-(\w+)/.exec(className || '');
@@ -600,14 +598,14 @@ function RealTimeLogFetchingTab({ projectId }: { projectId: number }) {
                                                                         </code>
                                                                     );
                                                                 },
-                                                                h3: ({children}: any) => <h3 className="text-sm font-black text-white uppercase tracking-widest mt-6 mb-3 flex items-center gap-2">
+                                                                h3: ({ children }: any) => <h3 className="text-sm font-black text-white uppercase tracking-widest mt-6 mb-3 flex items-center gap-2">
                                                                     <div className="w-1 h-3 bg-indigo-500 rounded-full" />
                                                                     {children}
                                                                 </h3>,
-                                                                h4: ({children}: any) => <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest mt-4 mb-2">{children}</h4>,
-                                                                p: ({children}: any) => <p className="text-xs text-slate-300 leading-relaxed mb-4">{children}</p>,
-                                                                ul: ({children}: any) => <ul className="space-y-2 mb-4 list-none p-0">{children}</ul>,
-                                                                li: ({children}: any) => <li className="flex gap-3 items-start text-xs text-slate-400">
+                                                                h4: ({ children }: any) => <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest mt-4 mb-2">{children}</h4>,
+                                                                p: ({ children }: any) => <p className="text-xs text-slate-300 leading-relaxed mb-4">{children}</p>,
+                                                                ul: ({ children }: any) => <ul className="space-y-2 mb-4 list-none p-0">{children}</ul>,
+                                                                li: ({ children }: any) => <li className="flex gap-3 items-start text-xs text-slate-400">
                                                                     <div className="mt-1.5 h-1 w-1 rounded-full bg-indigo-500/50 flex-shrink-0" />
                                                                     {children}
                                                                 </li>
@@ -625,9 +623,9 @@ function RealTimeLogFetchingTab({ projectId }: { projectId: number }) {
                                                             </div>
                                                             <span>ENGINE: OPENROUTER / GPT-4O</span>
                                                         </div>
-                                                        
+
                                                         {analysis.raw_ai_text && (
-                                                            <button 
+                                                            <button
                                                                 onClick={() => setShowRaw(prev => ({ ...prev, [group.key]: !prev[group.key] }))}
                                                                 className="flex items-center gap-2 text-[9px] font-black text-indigo-500/60 hover:text-indigo-400 uppercase tracking-widest transition-all group/raw"
                                                             >
@@ -639,7 +637,7 @@ function RealTimeLogFetchingTab({ projectId }: { projectId: number }) {
                                                 </div>
 
                                                 {showRaw[group.key] && analysis.raw_ai_text && (
-                                                    <motion.div 
+                                                    <motion.div
                                                         initial={{ opacity: 0, height: 0 }}
                                                         animate={{ opacity: 1, height: 'auto' }}
                                                         className="mt-4 p-5 bg-black/60 rounded-3xl border border-slate-800/80 shadow-inner"
@@ -717,7 +715,7 @@ export default function MonitoringPage() {
     const fetchProjects = useCallback(async () => {
         try {
             const res = await axios.get(`${API}/api/monitor/projects/${USER_ID}`, {
-                timeout: 15000, // Increased timeout for remote DB
+                timeout: 30000, // Increased timeout for remote DB
             });
             const fetchedProjects = res.data as Project[];
             setProjects(fetchedProjects);
@@ -750,7 +748,7 @@ export default function MonitoringPage() {
     const fetchProjectDetail = useCallback(async (project: Project) => {
         try {
             // 1. Fetch lightweight meta
-            const metaRes = await axios.get(`${API}/api/monitor/logs-meta/${project.id}`, { timeout: 8000 });
+            const metaRes = await axios.get(`${API}/api/monitor/logs-meta/${project.id}`, { timeout: 15000 });
             const currentMeta = metaRes.data;
             const currentSession = project.session_id || "initial";
 
@@ -761,28 +759,28 @@ export default function MonitoringPage() {
 
             // 2. State has changed, fetch heavy logs and files
             const [logsRes, filesRes, projectsRes] = await Promise.all([
-                axios.get(`${API}/api/monitor/logs/${project.id}`, { timeout: 8000 }),
-                axios.get(`${API}/api/monitor/files/${project.id}`, { timeout: 8000 }),
-                axios.get(`${API}/api/monitor/projects/${USER_ID}`, { timeout: 8000 })
+                axios.get(`${API}/api/monitor/logs/${project.id}`, { timeout: 20000 }),
+                axios.get(`${API}/api/monitor/files/${project.id}`, { timeout: 20000 }),
+                axios.get(`${API}/api/monitor/projects/${USER_ID}`, { timeout: 20000 })
             ]);
-            
+
             lastMetaRef.current = { count: currentMeta.count, session: currentSession };
-            
+
             const latestProject = (projectsRes.data as Project[]).find(p => p.id === project.id);
             if (latestProject) {
-                const hasSessionChanged = project.session_id && 
-                                        latestProject.session_id && 
-                                        project.session_id !== latestProject.session_id;
-                                        
+                const hasSessionChanged = project.session_id &&
+                    latestProject.session_id &&
+                    project.session_id !== latestProject.session_id;
+
                 if (hasSessionChanged) {
                     setLogs([]);
                 } else if (latestProject.is_active) {
                     setLogs(logsRes.data || []);
                 }
-                
+
                 setSelectedProject(latestProject);
             }
-            
+
             setFiles(filesRes.data || []);
         } catch {
             // silently ignore
@@ -874,7 +872,7 @@ export default function MonitoringPage() {
                     focused_file_path: selectedFile || undefined,
                     focused_file_content: selectedFileContent || undefined
                 },
-                { timeout: 60000 }
+                { timeout: 180000 }
             );
             const botMsg: ChatMessage = {
                 role: "assistant",
@@ -1036,7 +1034,7 @@ export default function MonitoringPage() {
                     >
                         <RefreshCw className="h-4 w-4" />
                     </button>
-                    
+
                     <Link
                         href={`/monitoring/log-groups?projectId=${selectedProject?.id || ''}`}
                         className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-400 hover:text-indigo-300 border border-indigo-500/30 rounded-lg text-xs font-bold transition-all"
@@ -1427,7 +1425,7 @@ export default function MonitoringPage() {
                         </div>
 
                         {/* ── Logs Tab ── */}
-                        <div 
+                        <div
                             ref={logContainerRef}
                             className={activeTab === "logs" ? "flex-1 overflow-y-auto custom-scrollbar bg-slate-950 font-mono text-xs p-4 relative" : "hidden"}
                         >
@@ -1438,14 +1436,14 @@ export default function MonitoringPage() {
                                         <span className="text-[10px] font-black text-slate-400 tracking-widest uppercase">Live Session Stream</span>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                        <button 
+                                        <button
                                             onClick={() => scrollToBottom(true)}
                                             className="flex items-center gap-1.5 text-[9px] font-black text-slate-500 hover:text-slate-300 uppercase tracking-widest bg-slate-900 px-3 py-1.5 rounded-full border border-slate-800 transition-all"
                                         >
                                             <Clock className="h-3 w-3" />
                                             Latest
                                         </button>
-                                        <Link 
+                                        <Link
                                             href={`/monitoring/log-groups?projectId=${selectedProject.id}`}
                                             className="flex items-center gap-2 text-[9px] font-black text-indigo-400 hover:text-indigo-300 uppercase tracking-widest bg-indigo-500/10 px-4 py-1.5 rounded-full border border-indigo-500/20 transition-all hover:bg-indigo-500/20"
                                         >

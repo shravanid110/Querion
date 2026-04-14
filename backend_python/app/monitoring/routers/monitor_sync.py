@@ -76,7 +76,7 @@ async def sync_monitor_data(req: SyncRequest, db: Session = Depends(get_monitor_
             UserProject.project_name == req.project_name
         ).first()
 
-        if not project:
+        if not project:     
             project = UserProject(user_id=req.user_id, project_name=req.project_name)
             db.add(project)
             db.commit() # Commit to get the ID for the background task

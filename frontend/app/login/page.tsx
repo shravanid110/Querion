@@ -17,6 +17,11 @@ function SocialButton({ icon, label, onClick, disabled }: { icon: React.ReactNod
 }
 
 function VisualPanel() {
+    const [mounted, setMounted] = React.useState(false);
+    React.useEffect(() => {
+        setMounted(true);
+    }, []);
+
     return (
         <div className="relative flex flex-col justify-between h-full p-12 overflow-hidden">
             <div className="absolute top-[-20%] left-[-20%] w-[600px] h-[600px] bg-indigo-600/20 rounded-full blur-[120px] pointer-events-none" />
@@ -39,7 +44,7 @@ function VisualPanel() {
                             <Database size={36} className="text-white" />
                         </motion.div>
                     </div>
-                    {[{ angle: 0, icon: <Activity size={14} className="text-cyan-300" />, color: "from-cyan-500/30 to-cyan-500/10" }, { angle: 72, icon: <Shield size={14} className="text-indigo-300" />, color: "from-indigo-500/30 to-indigo-500/10" }, { angle: 144, icon: <Zap size={14} className="text-purple-300" />, color: "from-purple-500/30 to-purple-500/10" }, { angle: 216, icon: <CheckCircle2 size={14} className="text-emerald-300" />, color: "from-emerald-500/30 to-emerald-500/10" }, { angle: 288, icon: <Lock size={14} className="text-pink-300" />, color: "from-pink-500/30 to-pink-500/10" }].map((node, i) => {
+                    {mounted && [{ angle: 0, icon: <Activity size={14} className="text-cyan-300" />, color: "from-cyan-500/30 to-cyan-500/10" }, { angle: 72, icon: <Shield size={14} className="text-indigo-300" />, color: "from-indigo-500/30 to-indigo-500/10" }, { angle: 144, icon: <Zap size={14} className="text-purple-300" />, color: "from-purple-500/30 to-purple-500/10" }, { angle: 216, icon: <CheckCircle2 size={14} className="text-emerald-300" />, color: "from-emerald-500/30 to-emerald-500/10" }, { angle: 288, icon: <Lock size={14} className="text-pink-300" />, color: "from-pink-500/30 to-pink-500/10" }].map((node, i) => {
                         const rad = (node.angle * Math.PI) / 180;
                         const x = Math.cos(rad) * 110;
                         const y = Math.sin(rad) * 110;
@@ -78,8 +83,13 @@ export default function LoginPage() {
     const [rememberMe, setRememberMe] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [mounted, setMounted] = useState(false);
     const [emailFocused, setEmailFocused] = useState(false);
     const [passwordFocused, setPasswordFocused] = useState(false);
+
+    React.useEffect(() => {
+        setMounted(true);
+    }, []);
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -115,7 +125,7 @@ export default function LoginPage() {
                     </div>
 
                     {/* OAuth Login Buttons */}
-                    <div className="space-y-3 mb-6">
+                    <div className="space-y-3 mb-6 relative z-20">
                         <SocialButton disabled={loading} onClick={async () => {
                             try {
                                 setLoading(true);
@@ -137,7 +147,7 @@ export default function LoginPage() {
                         }} icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" className="text-white"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.44 9.8 8.2 11.38.6.1.82-.26.82-.58v-2.17c-3.34.72-4.04-1.45-4.04-1.45-.55-1.38-1.33-1.75-1.33-1.75-1.09-.74.08-.73.08-.73 1.2.09 1.84 1.24 1.84 1.24 1.07 1.83 2.8 1.3 3.5 1 .1-.78.42-1.3.76-1.6-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.14-.3-.54-1.52.1-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 0 1 3-.4c1.02 0 2.04.13 3 .4 2.28-1.55 3.29-1.23 3.29-1.23.64 1.66.24 2.88.12 3.18.77.84 1.23 1.9 1.23 3.22 0 4.61-2.81 5.63-5.48 5.92.43.37.81 1.1.81 2.22v3.29c0 .32.21.7.82.58A12 12 0 0 0 24 12C24 5.37 18.63 0 12 0z" /></svg>} label="Sign in with GitHub" />
                     </div>
 
-                    <div className="flex items-center gap-4 mb-6">
+                    <div className="flex items-center gap-4 mb-6 relative z-20">
                         <div className="flex-1 h-px bg-white/10" />
                         <span className="text-slate-500 text-[11px] font-bold uppercase tracking-widest">or</span>
                         <div className="flex-1 h-px bg-white/10" />
@@ -154,30 +164,30 @@ export default function LoginPage() {
 
                     <form onSubmit={handleLogin} className="space-y-4">
                         <div className="relative">
-                            <label className={`absolute left-4 transition-all duration-200 pointer-events-none ${emailFocused || email ? 'top-2 text-[10px] font-bold text-indigo-400 uppercase tracking-widest' : 'top-1/2 -translate-y-1/2 text-slate-500 text-sm'}`}>Email Address</label>
-                            <input type="email" value={email} onChange={e => setEmail(e.target.value)} onFocus={() => setEmailFocused(true)} onBlur={() => setEmailFocused(false)} className={`w-full pt-6 pb-2 px-4 bg-white/5 rounded-xl border text-white text-sm outline-none transition-all duration-200 ${emailFocused ? 'border-indigo-500/70 shadow-[0_0_0_3px_rgba(99,102,241,0.1)]' : 'border-white/10 hover:border-white/20'}`} required />
+                            <label className={`absolute left-4 transition-all duration-200 pointer-events-none z-10 ${emailFocused || email ? 'top-2 text-[10px] font-bold text-indigo-400 uppercase tracking-widest' : 'top-1/2 -translate-y-1/2 text-slate-500 text-sm'}`}>Email Address</label>
+                            <input type="email" value={email} onChange={e => setEmail(e.target.value)} onFocus={() => setEmailFocused(true)} onBlur={() => setEmailFocused(false)} className={`w-full pt-6 pb-2 px-4 bg-white/5 rounded-xl border text-white text-sm outline-none transition-all duration-200 relative z-20 ${emailFocused ? 'border-indigo-500/70 shadow-[0_0_0_3px_rgba(99,102,241,0.1)]' : 'border-white/10 hover:border-white/20'}`} required />
                         </div>
                         <div className="relative">
-                            <label className={`absolute left-4 transition-all duration-200 pointer-events-none ${passwordFocused || password ? 'top-2 text-[10px] font-bold text-indigo-400 uppercase tracking-widest' : 'top-1/2 -translate-y-1/2 text-slate-500 text-sm'}`}>Password</label>
-                            <input type={showPassword ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} onFocus={() => setPasswordFocused(true)} onBlur={() => setPasswordFocused(false)} className={`w-full pt-6 pb-2 pl-4 pr-12 bg-white/5 rounded-xl border text-white text-sm outline-none transition-all duration-200 ${passwordFocused ? 'border-indigo-500/70 shadow-[0_0_0_3px_rgba(99,102,241,0.1)]' : 'border-white/10 hover:border-white/20'}`} required />
-                            <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition-colors">{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button>
-                            <Lock size={12} className="absolute right-11 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none" />
+                            <label className={`absolute left-4 transition-all duration-200 pointer-events-none z-10 ${passwordFocused || password ? 'top-2 text-[10px] font-bold text-indigo-400 uppercase tracking-widest' : 'top-1/2 -translate-y-1/2 text-slate-500 text-sm'}`}>Password</label>
+                            <input type={showPassword ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} onFocus={() => setPasswordFocused(true)} onBlur={() => setPasswordFocused(false)} className={`w-full pt-6 pb-2 pl-4 pr-12 bg-white/5 rounded-xl border text-white text-sm outline-none transition-all duration-200 relative z-20 ${passwordFocused ? 'border-indigo-500/70 shadow-[0_0_0_3px_rgba(99,102,241,0.1)]' : 'border-white/10 hover:border-white/20'}`} required />
+                            <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition-colors z-30">{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button>
+                            <Lock size={12} className="absolute right-11 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none z-30" />
                         </div>
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-center justify-between relative z-20">
                             <label className="flex items-center gap-2 cursor-pointer">
-                                <div onClick={() => setRememberMe(!rememberMe)} className={`w-4 h-4 rounded border flex items-center justify-center transition-all duration-200 ${rememberMe ? 'bg-indigo-600 border-indigo-500' : 'border-white/20 bg-white/5'}`}>{rememberMe && <CheckCircle2 size={10} className="text-white fill-white" />}</div>
+                                <span onClick={() => setRememberMe(!rememberMe)} className={`w-4 h-4 rounded border flex items-center justify-center transition-all duration-200 ${rememberMe ? 'bg-indigo-600 border-indigo-500' : 'border-white/20 bg-white/5'}`}>{rememberMe && <CheckCircle2 size={10} className="text-white fill-white" />}</span>
                                 <span className="text-slate-400 text-xs select-none">Remember me</span>
                             </label>
                             <Link href="/forgot-password" className="text-xs font-semibold text-indigo-400 hover:text-indigo-300 transition-colors">Forgot Password?</Link>
                         </div>
-                        <motion.button type="submit" disabled={loading} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className="relative w-full h-12 rounded-xl font-bold text-white text-sm overflow-hidden group disabled:opacity-70 disabled:cursor-not-allowed mt-2">
+                        <motion.button type="submit" disabled={loading} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className="relative w-full h-12 rounded-xl font-bold text-white text-sm overflow-hidden group disabled:opacity-70 disabled:cursor-not-allowed mt-2 z-20">
                             <div className="absolute inset-0 bg-gradient-to-r from-indigo-600 to-cyan-500 transition-all duration-300 group-hover:from-indigo-500 group-hover:to-cyan-400" />
                             <span className="relative flex items-center justify-center gap-2">{loading ? <><Loader2 size={16} className="animate-spin" />Signing in...</> : <>Sign In <ArrowRight size={16} /></>}</span>
                         </motion.button>
                     </form>
 
-                    <p className="text-center text-slate-400 text-sm mt-6">Don&apos;t have an account?{" "}<Link href="/signup" className="font-bold text-indigo-400 hover:text-indigo-300 transition-colors">Create an account</Link></p>
-                    <div className="mt-8 flex items-center justify-center gap-2 text-slate-600 text-[11px]"><Shield size={12} /><span>Encrypted authentication · Stored securely</span></div>
+                    <p className="text-center text-slate-400 text-sm mt-6 relative z-20">Don&apos;t have an account?{" "}<Link href="/signup" className="font-bold text-indigo-400 hover:text-indigo-300 transition-colors">Create an account</Link></p>
+                    <div className="mt-8 flex items-center justify-center gap-2 text-slate-600 text-[11px] relative z-10"><Shield size={12} /><span>Encrypted authentication · Stored securely</span></div>
                 </motion.div>
             </div>
         </div>

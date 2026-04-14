@@ -115,3 +115,5 @@ async def custom_404_handler(request: Request, exc):
 if __name__ == "__main__":
     uvicorn.run("app.main:app", host="0.0.0.0", port=settings.PORT, reload=True)
 
+
+# Trigger reload to regenerate chainlit config - v3 (New SMTP Pass)

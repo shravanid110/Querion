@@ -138,7 +138,10 @@ async def schedule_prompt(req: ScheduleRequest, db: Session = Depends(get_db)):
 
 # 3. Scheduler & Email Logic
 def send_email(to_email: str, subject: str, body: str):
-    print(f"Sending email to: {to_email}")
+    # Failsafe: Aggressively remove all whitespace/newlines again right before login
+    final_user = settings.SMTP_USER.strip()
+    final_pass = settings.SMTP_PASS.replace(" ", "").strip()
+    
     try:
         if not to_email:
             print("⚠️ EMAIL NOT SENT: Recipient email is empty")
@@ -153,15 +156,23 @@ def send_email(to_email: str, subject: str, body: str):
             print("⚠️ EMAIL NOT SENT: SMTP credentials missing in .env")
             return False
 
-        with smtplib.SMTP(settings.SMTP_SERVER, settings.SMTP_PORT) as server:
-            server.starttls()
-            server.login(settings.SMTP_USER, settings.SMTP_PASS)
+        # Choose SSL or TLS based on port
+        if settings.SMTP_PORT == 465:
+            server_class = smtplib.SMTP_SSL
+        else:
+            server_class = smtplib.SMTP
+            
+        with server_class(settings.SMTP_SERVER, settings.SMTP_PORT) as server:
+            if settings.SMTP_PORT != 465:
+                server.starttls()
+            
+            server.login(final_user, final_pass)
             server.send_message(msg)
             
-        print("Email sent successfully")
+        print("✅ Email sent successfully")
         return True
     except Exception as e:
-        print(f"Failed to send email: {e}")
+        print(f"❌ Failed to send email: {e}")
         return False
 
 def background_job():

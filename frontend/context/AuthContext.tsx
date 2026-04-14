@@ -20,6 +20,7 @@ interface AuthContextType {
     signInWithGoogle: () => Promise<void>;
     signInWithGithub: () => Promise<void>;
     login: (email: string, password: string) => Promise<void>;
+    register: (name: string, email: string, password: string) => Promise<void>;
     logout: () => Promise<void>;
 }
 
@@ -111,6 +112,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
     }, []);
 
+    const register = useCallback(async (name: string, email: string, password: string) => {
+        const { data, error } = await supabase.auth.signUp({
+            email,
+            password,
+            options: {
+                data: {
+                    full_name: name,
+                },
+            },
+        });
+        if (error) throw error;
+        if (data.user) {
+            await syncUserToBackend(data.user);
+        }
+    }, []);
+
     const logout = useCallback(async () => {
         const { error } = await supabase.auth.signOut();
         if (error) console.error("Error signing out", error);
@@ -118,7 +135,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }, []);
 
     return (
-        <AuthContext.Provider value={{ user, loading, signInWithGoogle, signInWithGithub, login, logout }}>
+        <AuthContext.Provider value={{ user, loading, signInWithGoogle, signInWithGithub, login, register, logout }}>
             {children}
         </AuthContext.Provider>
     );

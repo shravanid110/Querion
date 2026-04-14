@@ -163,8 +163,10 @@ def send_email(to_email: str, subject: str, body: str):
             print("⚠️ EMAIL NOT SENT: SMTP credentials missing in .env")
             return False
 
-        # Failsafe: Remove spaces again right before login
-        final_pass = settings.SMTP_PASS.replace(" ", "")
+        # Failsafe: Aggressively remove all whitespace/newlines again right before login
+        final_user = settings.SMTP_USER.strip()
+        final_pass = settings.SMTP_PASS.replace(" ", "").strip()
+        print(f"[DEBUG] Final processed user: {final_user}")
         print(f"[DEBUG] Final processed passkey length: {len(final_pass)}")
 
         # Choose SSL or TLS based on port
@@ -177,7 +179,7 @@ def send_email(to_email: str, subject: str, body: str):
             if settings.SMTP_PORT != 465:
                 server.starttls()
             
-            server.login(settings.SMTP_USER, final_pass)
+            server.login(final_user, final_pass)
             server.send_message(msg)
             
         print("✅ Email sent successfully")
