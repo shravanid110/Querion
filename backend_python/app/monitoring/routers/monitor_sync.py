@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 
 from ..models import get_monitor_db, UserProject, ProjectFile, ProjectLog
 from app.config import settings
@@ -65,6 +66,11 @@ class ChatRequest(BaseModel):
     focused_file_path: Optional[str] = None
     focused_file_content: Optional[str] = None
 
+class ConnectFolderRequest(BaseModel):
+    user_id: str = "default_user"
+    folder_path: str
+    project_name: Optional[str] = None
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.post("/sync")
@@ -117,6 +123,102 @@ async def sync_monitor_data(req: SyncRequest, db: Session = Depends(get_monitor_
     except Exception as e:
         logger.error(f"SYNC_INIT_ERROR: {str(e)}")
         return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@router.post("/connect-folder")
+async def connect_local_folder(req: ConnectFolderRequest, db: Session = Depends(get_monitor_db)):
+    """Connect a local project folder directly, indexing files and logs."""
+    folder = os.path.abspath(req.folder_path.strip().strip('"').strip("'"))
+    if not os.path.isdir(folder):
+        raise HTTPException(status_code=400, detail=f"Directory not found: {folder}")
+
+    project_name = req.project_name or os.path.basename(folder.rstrip("/\\")) or "Project"
+
+    project = db.query(UserProject).filter(
+        UserProject.user_id == req.user_id,
+        UserProject.project_name == project_name
+    ).first()
+
+    if not project:
+        project = UserProject(user_id=req.user_id, project_name=project_name)
+        db.add(project)
+        db.commit()
+        db.refresh(project)
+
+    now = datetime.utcnow()
+    import uuid
+    PROJ_ACTIVITY[project.id] = now
+    PROJ_SESSIONS[project.id] = str(uuid.uuid4())
+    PROJ_SESSION_START[project.id] = now
+
+    WATCHED_EXTS = {'.py', '.js', '.ts', '.tsx', '.jsx', '.env', '.json', '.log', '.txt', '.css', '.html', '.sql', '.md', '.yml', '.yaml'}
+    SKIP_DIRS = {'.git', '__pycache__', 'node_modules', 'venv', '.venv', 'dist', '.next', 'build', '.cache'}
+
+    synced_files = 0
+    synced_logs = 0
+
+    for root, dirs, files in os.walk(folder):
+        dirs[:] = [d for d in dirs if d not in SKIP_DIRS and not d.startswith('.')]
+        for f in files:
+            ext = os.path.splitext(f)[1].lower()
+            if ext in WATCHED_EXTS:
+                full_p = os.path.join(root, f)
+                try:
+                    rel_p = os.path.relpath(full_p, folder).replace('\\', '/')
+                    with open(full_p, 'r', encoding='utf-8', errors='ignore') as fp:
+                        content = fp.read()
+
+                    if ext == '.log':
+                        for line in content.splitlines()[-50:]:
+                            cleaned = line.strip()
+                            if cleaned:
+                                db.add(ProjectLog(project_id=project.id, log_line=cleaned, timestamp=now))
+                                synced_logs += 1
+
+                    existing = db.query(ProjectFile).filter(
+                        ProjectFile.project_id == project.id,
+                        or_(
+                            ProjectFile.file_path == rel_p,
+                            ProjectFile.file_path == rel_p.replace('/', '\\')
+                        )
+                    ).first()
+                    if existing:
+                        existing.content = content
+                    else:
+                        db.add(ProjectFile(project_id=project.id, file_path=rel_p, content=content))
+                    synced_files += 1
+                except Exception:
+                    pass
+
+    # Status log entries
+    db.add(ProjectLog(
+        project_id=project.id,
+        log_line=f"[Querion Monitor] Connected to local project folder: '{project_name}' ({folder})",
+        timestamp=now
+    ))
+    db.add(ProjectLog(
+        project_id=project.id,
+        log_line=f"[Querion Monitor] Successfully loaded {synced_files} project file(s).",
+        timestamp=now
+    ))
+    db.commit()
+
+    try:
+        from .monitor_ws import manager
+        await manager.broadcast_to_user(req.user_id, {
+            "type": "logs_synced",
+            "project_id": project.id
+        })
+    except Exception:
+        pass
+
+    return {
+        "status": "success",
+        "project_id": project.id,
+        "project_name": project.project_name,
+        "file_count": synced_files,
+        "log_count": synced_logs + 2
+    }
 
 async def process_sync_background(req: SyncRequest, project_id: int, is_restart: bool = False):
     from .monitor_ws import manager
@@ -223,9 +325,12 @@ async def process_sync_background(req: SyncRequest, project_id: int, is_restart:
                              state["lines"].append(line)
                              if not state["ts"]: state["ts"] = l.timestamp or datetime.utcnow()
 
-                # Rule: Don't emit the last block yet - it might have trailing stack lines in next sync
-                # EXCEPT if the log is clearly an INFO or common line that likely won't have more lines.
-                # For simplicity, we emit blocks when we see a NEW event.
+                # FLUSH any remaining buffer lines so errors are never lost:
+                if state["lines"]:
+                    log_blocks.append({"lines": list(state["lines"]), "ts": state["ts"]})
+                    has_err = any(kw in "\n".join(state["lines"]).lower() for kw in ["error", "exception", "failed", "crash", "syntax", "traceback"])
+                    if has_err:
+                        state["lines"] = []
                 
                 # c. Show grouping in Terminal for debugging
                 if log_blocks:
@@ -528,9 +633,15 @@ async def analyze_error_v2(req: dict):
 @router.get("/file-content/{project_id}")
 async def get_file_content(project_id: int, path: str, db: Session = Depends(get_monitor_db)):
     """Fetch content for a specific file on demand."""
+    normalized_slash = path.replace("\\", "/")
+    normalized_backslash = path.replace("/", "\\")
     f = db.query(ProjectFile).filter(
         ProjectFile.project_id == project_id,
-        ProjectFile.file_path == path
+        or_(
+            ProjectFile.file_path == path,
+            ProjectFile.file_path == normalized_slash,
+            ProjectFile.file_path == normalized_backslash
+        )
     ).first()
     if not f:
         raise HTTPException(status_code=404, detail="File not found")
@@ -544,10 +655,12 @@ async def get_log_groups(project_id: int, limit: int = 1000, db: Session = Depen
     query = db.query(ProjectLog).filter(ProjectLog.project_id == project_id)
     
     start_time = PROJ_SESSION_START.get(project_id)
-    if not start_time:
-        # Fallback: If no session recorded yet, default to last 15 minutes to avoid history flood
+    if start_time:
         from datetime import timedelta
-        start_time = datetime.utcnow() - timedelta(minutes=15)
+        start_time = start_time - timedelta(minutes=5)
+    else:
+        from datetime import timedelta
+        start_time = datetime.utcnow() - timedelta(hours=24)
         
     query = query.filter(ProjectLog.timestamp >= start_time)
         
@@ -563,10 +676,16 @@ async def get_log_groups(project_id: int, limit: int = 1000, db: Session = Depen
     STACK_INDICATORS = ["at ", "at JSX", "File:", "Plugin:", "Internal server error", "traceback", "line ", "│", "├──", "└──"]
 
     def is_new_event(text):
-        # 1. New Group Starts ONLY on timestamp or clear Vite Error Markers
         if TIMESTAMP_PAT.search(text): return True
-        lower = text.lower()
-        if "[vite] internal server error" in lower or "error:" in lower:
+        lower = text.lower().strip()
+        if any(kw in lower for kw in [
+            "[vite]", "internal server error", "error", "exception", "failed", 
+            "syntaxerror", "referenceerror", "typeerror", "traceback", "uncaught"
+        ]):
+            return True
+        if LOG_LEVEL_PAT.search(text) and not any(lower.startswith(s) for s in ["at ", "in ", "file:"]):
+            return True
+        if any(lower.startswith(kw.lower()) for kw in PROCESS_MARKERS):
             return True
         return False
 

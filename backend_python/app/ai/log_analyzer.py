@@ -15,31 +15,40 @@ load_dotenv()
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY") or settings.OPENROUTER_API_KEY or "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"
 
 async def run_openrouter_engine(prompt: str) -> str:
-    """Primary Cloud AI engine via OpenRouter (using DeepSeek)."""
-    logger.info("Local engine unreachable. Querying OpenRouter (DeepSeek) for expert analysis...")
-    try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                json={
-                    "model": "openai/gpt-4o-mini",
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.2
-                },
-                headers={
-                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                    "Content-Type": "application/json",
-                    "X-Title": "Querion Observability"
-                },
-                timeout=60.0
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                return data.get("choices", [{}])[0].get("message", {}).get("content", "")
-            else:
-                logger.error(f"OpenRouter API error: {resp.status_code} - {resp.text}")
-    except Exception as e:
-        logger.error(f"OpenRouter connection failed: {e}")
+    """Primary Cloud AI engine via OpenRouter (with automatic free fallback)."""
+    models = [
+        "nvidia/nemotron-3.5-lightning:free",
+        "cohere/north-mini-code:free",
+        "liquid/lfm-2.5-2.6b:free",
+        "google/gemma-4-26b-a4b-it:free",
+        "openai/gpt-4o-mini"
+    ]
+    for model_name in models:
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    json={
+                        "model": model_name,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "temperature": 0.2
+                    },
+                    headers={
+                        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                        "Content-Type": "application/json",
+                        "X-Title": "Querion Observability"
+                    },
+                    timeout=30.0
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                    if content:
+                        return content
+                else:
+                    logger.warning(f"OpenRouter ({model_name}) status: {resp.status_code}")
+        except Exception as e:
+            logger.warning(f"OpenRouter connection for {model_name} failed: {e}")
     return ""
 
 async def run_ollama_fallback(prompt: str) -> str:
@@ -199,12 +208,15 @@ Project Context:
 """
 
     logger.info(f"🚀 Initializing AI Analysis Engine...")
-    # Bypass slow local Ollama and use OpenRouter directly
     result_text = await run_openrouter_engine(master_prompt)
     
     if not result_text:
-        logger.info("OpenRouter failed, attempting final local fallback...")
+        logger.info("OpenRouter failed, attempting local Ollama fallback...")
         result_text = await run_ollama_fallback(master_prompt)
+
+    if not result_text:
+        logger.info("Ollama failed, attempting Grok fallback...")
+        result_text = await run_grok_fallback(master_prompt)
         
     if result_text:
         # Parse the structured text into a UI-friendly dictionary

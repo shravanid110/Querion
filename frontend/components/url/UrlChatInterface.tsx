@@ -298,7 +298,7 @@ export const UrlChatInterface: React.FC<UrlChatInterfaceProps> = ({ messages, on
             <div className="p-4 bg-white border-t border-gray-100 flex items-center gap-3">
                 <form onSubmit={handleSubmit} className="flex-1 flex gap-2 relative">
                     <input
-                        className="flex-1 w-full px-5 py-3 bg-gray-50 border border-gray-200 rounded-full focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all pr-12 text-sm md:text-base"
+                        className="flex-1 w-full px-5 py-3 bg-gray-50 border border-gray-200 rounded-full focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all pr-12 text-sm md:text-base text-gray-900 placeholder-gray-400"
                         placeholder="Type your question..."
                         value={input}
                         onChange={e => setInput(e.target.value)}

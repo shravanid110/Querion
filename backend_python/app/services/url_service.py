@@ -174,8 +174,8 @@ class UrlService:
                 "type": "bar" | "line" | "pie" | "area", 
                 "title": "A descriptive title",
                 "data": [
-                    {{ "name": "Label1", "value": 100 }},
-                    {{ "name": "Label2", "value": 200 }}
+                    {{"name": "Label1", "value": 100}},
+                    {{"name": "Label2", "value": 200}}
                 ],
                 "xAxisLabel": "X Axis Label",
                 "yAxisLabel": "Y Axis Label",
@@ -184,7 +184,7 @@ class UrlService:
             
             - AGGREGATION IS REQUIRED: If the dataset has multiple rows for the same category, you MUST calculate the AVERAGE, SUM, or COUNT and return ONLY the summarized data. 
             - DO NOT return raw rows. The "data" array should contain no more than 15 aggregated items.
-            - format: "data": [{"name": "Category", "value": 12.5}, ...]
+            - Each item in data must follow this exact format: {{"name": "Category", "value": 12.5}}
             - If the request is NOT for a visual, answer normally in text.
             - Do NOT say "information is not available" unless truly impossible.
             - You CAN infer trends and aggregate the sample data provided to create these charts."""

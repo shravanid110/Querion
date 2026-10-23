@@ -698,6 +698,9 @@ export default function MonitoringPage() {
     ];
 
     const [projectError, setProjectError] = useState<string | null>(null);
+    const [folderInput, setFolderInput] = useState("");
+    const [connectingFolder, setConnectingFolder] = useState(false);
+    const [folderConnectSuccess, setFolderConnectSuccess] = useState<string | null>(null);
 
     // ── Voice state ─────────────────────────────────────────────────────────
     const [voiceStatus, setVoiceStatus] = useState<"idle" | "recording" | "processing" | "done" | "error">("idle");
@@ -734,6 +737,29 @@ export default function MonitoringPage() {
             setLoadingProjects(false);
         }
     }, [urlProjectId, selectedProject]);
+
+    const handleConnectFolder = async () => {
+        const path = folderInput.trim();
+        if (!path) return;
+        setConnectingFolder(true);
+        setProjectError(null);
+        setFolderConnectSuccess(null);
+        try {
+            const res = await axios.post(`${API}/api/monitor/connect-folder`, {
+                user_id: USER_ID,
+                folder_path: path
+            });
+            setFolderConnectSuccess(`Connected '${res.data.project_name}' (${res.data.file_count} files loaded)`);
+            setFolderInput("");
+            await fetchProjects();
+            setTimeout(() => setFolderConnectSuccess(null), 4000);
+        } catch (err: any) {
+            const msg = err.response?.data?.detail || err.response?.data?.error || err.message || "Failed to connect folder";
+            setProjectError(`Folder connection failed: ${msg}`);
+        } finally {
+            setConnectingFolder(false);
+        }
+    };
 
     useEffect(() => {
         fetchProjects();
@@ -1091,11 +1117,42 @@ export default function MonitoringPage() {
                                         pip install querion-cli
                                     </p>
                                     <p className="mt-2">
-                                        <span className="text-slate-500"># 2. Watch your project</span>
+                                        <span className="text-slate-500"># 2. Watch your project (auto-detects project name from folder)</span>
                                     </p>
                                     <p className="text-cyan-300">
-                                        querion watch --project "MyProject"
+                                        querion watch
                                     </p>
+                                </div>
+
+                                <div className="mt-5 pt-4 border-t border-slate-800">
+                                    <div className="flex items-center gap-2 mb-2 text-xs font-semibold text-slate-300">
+                                        <FolderCode className="h-4 w-4 text-cyan-400" />
+                                        <span>Or connect folder directly:</span>
+                                    </div>
+                                    <div className="flex flex-col sm:flex-row gap-2">
+                                        <input
+                                            type="text"
+                                            value={folderInput}
+                                            onChange={(e) => setFolderInput(e.target.value)}
+                                            onKeyDown={(e) => e.key === "Enter" && handleConnectFolder()}
+                                            placeholder="e.g. C:\Users\lenovo\Desktop\myproject"
+                                            className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                                        />
+                                        <button
+                                            onClick={handleConnectFolder}
+                                            disabled={connectingFolder || !folderInput.trim()}
+                                            className="flex items-center justify-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl text-xs font-semibold transition-all shadow-md"
+                                        >
+                                            {connectingFolder ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
+                                            <span>Connect Folder</span>
+                                        </button>
+                                    </div>
+                                    {folderConnectSuccess && (
+                                        <p className="text-emerald-400 text-xs mt-2 flex items-center gap-1">
+                                            <CheckCircle2 className="h-3.5 w-3.5" />
+                                            {folderConnectSuccess}
+                                        </p>
+                                    )}
                                 </div>
                             </div>
                         </div>

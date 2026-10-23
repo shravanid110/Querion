@@ -91,13 +91,15 @@ async def verify_token(token: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Invalid or expired token")
         
     # Get DB Name if possible for the UI
+    # Try Connection table first, then MultidbConnection (db_type can be 'mysql' in both tables)
     db_name = "Unknown DB"
-    if task.db_type == "mysql":
-        conn = db.query(Connection).filter(Connection.id == task.database_id).first()
-        if conn: db_name = conn.name
+    conn = db.query(Connection).filter(Connection.id == task.database_id).first()
+    if conn:
+        db_name = conn.name or "MySQL Connection"
     else:
         conn = db.query(MultidbConnection).filter(MultidbConnection.id == task.database_id).first()
-        if conn: db_name = conn.name or f"{conn.db_type} Connection"
+        if conn:
+            db_name = conn.name or f"{conn.db_type} Connection"
 
     return {
         "database_id": task.database_id,
@@ -120,21 +122,26 @@ async def execute_verify(data: dict = Body(...), db: Session = Depends(get_db)):
     if task.status == "executed":
         return {"success": False, "error": "This task has already been executed."}
     
-    conn = None
-    if task.db_type == "mysql":
-        conn = db.query(Connection).filter(Connection.id == task.database_id).first()
-    else:
+    # Try Connection table first, then MultidbConnection
+    # (db_type can be 'mysql' for rows in BOTH tables, so we must try both)
+    conn = db.query(Connection).filter(Connection.id == task.database_id).first()
+    is_multidb = False
+    if not conn:
         conn = db.query(MultidbConnection).filter(MultidbConnection.id == task.database_id).first()
+        is_multidb = True
         
     if not conn:
         raise HTTPException(status_code=404, detail="Database connection no longer exists")
-        
+
+    # Decrypt and verify password (keep HTTPException separate from decrypt errors)
     try:
         stored_db_password = decrypt(conn.password)
-        if db_pw != stored_db_password:
-            raise HTTPException(status_code=401, detail="Invalid database password")
-    except Exception:
-        raise HTTPException(status_code=401, detail="Could not verify database password")
+    except Exception as e:
+        print(f"[SCHEDULER] Decrypt error: {e}")
+        raise HTTPException(status_code=500, detail="Could not decrypt stored database password")
+    
+    if db_pw != stored_db_password:
+        raise HTTPException(status_code=401, detail="Incorrect database password. Please try again.")
 
     task.status = "executed"
     db.commit()
@@ -143,7 +150,7 @@ async def execute_verify(data: dict = Body(...), db: Session = Depends(get_db)):
         "success": True, 
         "prompt": task.prompt, 
         "database_id": task.database_id,
-        "db_type": task.db_type
+        "db_type": task.db_type if not is_multidb else conn.db_type
     }
 
 # ── Scheduler Helper Functions ────────────────────────────────────────────────

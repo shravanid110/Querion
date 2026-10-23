@@ -5,7 +5,7 @@ import { Sidebar } from '@/components/layout/Sidebar';
 import { Navbar } from '@/components/layout/Navbar';
 import { getHistory } from '@/services/api';
 import { useRouter } from 'next/navigation';
-import { Clock, Database, ChevronRight, MessageSquare, Loader2, Calendar, Play } from 'lucide-react';
+import { Clock, Database, ChevronRight, MessageSquare, Loader2, Calendar, Play, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChartPanel } from '@/components/dashboard/ChartPanel';
 import { DataTable } from '@/components/dashboard/DataTable';
@@ -30,17 +30,19 @@ export default function HistoryPage() {
     const [selectedItem, setSelectedItem] = useState<HistoryItem | null>(null);
     const router = useRouter();
 
+    const fetchHistory = async () => {
+        setLoading(true);
+        try {
+            const data = await getHistory();
+            setHistory(data);
+        } catch (error) {
+            console.error("Failed to fetch history:", error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     useEffect(() => {
-        const fetchHistory = async () => {
-            try {
-                const data = await getHistory();
-                setHistory(data);
-            } catch (error) {
-                console.error("Failed to fetch history:", error);
-            } finally {
-                setLoading(false);
-            }
-        };
         fetchHistory();
     }, []);
 
@@ -67,8 +69,18 @@ export default function HistoryPage() {
                                 <h1 className="text-2xl font-bold text-gray-900 tracking-tight flex items-center gap-2">
                                     <Clock className="text-indigo-600" /> Query History
                                 </h1>
-                                <p className="text-sm text-gray-500 mt-1">Review your past conversations and generated data</p>
+                                <p className="text-sm text-gray-500 mt-1">
+                                    {history.length > 0 ? `${history.length} saved queries` : 'Review your past conversations and generated data'}
+                                </p>
                             </div>
+                            <button
+                                onClick={fetchHistory}
+                                disabled={loading}
+                                className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-xl transition-all disabled:opacity-50"
+                            >
+                                <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+                                Refresh
+                            </button>
                         </div>
 
                         {loading ? (
