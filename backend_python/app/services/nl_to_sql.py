@@ -39,6 +39,8 @@ Your purpose is to monitor, explain, and provide DEEP INSIGHTS for all database 
 
 4. CHART RECOMMENDATION: Always suggest the best chart type ('bar', 'line', 'pie', 'area') for the result data in a "suggestedChart" field.
 
+5. CONDITION MATCHING: When filtering on status or category string columns (e.g. positive/negative, status, types), use flexible case-insensitive matching or LIKE '%keyword%' where appropriate to match actual database values.
+
 Output MUST be RAW JSON with "sql", "explanation", and "suggestedChart". 
 NOTE: Put the command/query string in the "sql" field.
 """
@@ -75,9 +77,9 @@ async def convert_nl_to_sql(schema_context: str, user_prompt: str, db_type: str 
         models.extend(["grok-beta", "grok-2-1212", "grok-2"])
     
     models.extend([
-        "google/gemini-2.0-flash-001",
-        "google/gemini-2.0-flash-lite-preview-02-05",
         "meta-llama/llama-3.3-70b-instruct",
+        "google/gemini-2.5-flash",
+        "deepseek/deepseek-chat",
         "anthropic/claude-3-haiku",
         "google/gemini-flash-1.5-8b:free",
         "meta-llama/llama-3.1-8b-instruct:free",
@@ -134,16 +136,33 @@ async def convert_nl_to_sql(schema_context: str, user_prompt: str, db_type: str 
                 if start != -1 and end != -1:
                     json_str = clean_content[start:end + 1]
                     try:
-                        return json.loads(json_str)
-                    except:
+                        parsed = json.loads(json_str, strict=False)
+                        if isinstance(parsed, dict) and "sql" in parsed:
+                            return parsed
+                    except Exception:
                         pass
 
-                # Fallback: extract SQL directly if not JSON
-                sql_match = re.search(r'SELECT\s+.*?;', content, re.IGNORECASE | re.DOTALL) or \
-                            re.search(r'SELECT\s+.*$', content, re.IGNORECASE | re.DOTALL)
+                    # Direct regex extraction if unescaped strings failed json.loads
+                    sql_field_match = re.search(r'"sql"\s*:\s*"((?:\\.|[^"\\])*)"', json_str)
+                    if sql_field_match:
+                        extracted_sql = sql_field_match.group(1).encode('utf-8').decode('unicode_escape', errors='ignore')
+                        chart_match = re.search(r'"suggestedChart"\s*:\s*"([^"]+)"', json_str)
+                        suggested_chart = chart_match.group(1) if chart_match else "bar"
+                        exp_match = re.search(r'"explanation"\s*:\s*"((?:\\.|[^"\\])*)"', json_str, re.DOTALL)
+                        explanation = exp_match.group(1).encode('utf-8').decode('unicode_escape', errors='ignore') if exp_match else "Query generated successfully."
+                        return {
+                            "sql": extracted_sql,
+                            "explanation": explanation,
+                            "suggestedChart": suggested_chart
+                        }
+
+                # Fallback: extract SQL directly if not JSON (without grabbing JSON metadata)
+                sql_match = re.search(r'(SELECT\s+[\s\S]+?;)', content, re.IGNORECASE) or \
+                            re.search(r'(SELECT\s+[^;"\n]+)', content, re.IGNORECASE)
                 if sql_match:
+                    clean_sql = sql_match.group(1).strip().rstrip(';')
                     return {
-                        "sql": sql_match.group(0),
+                        "sql": clean_sql,
                         "explanation": "Generated SQL directly (non-JSON response)."
                     }
                 
@@ -181,7 +200,7 @@ Executed SQL: {sql}
 Results Found: {total_rows} rows.
 
 Data Sample (First 10 rows):
-{json.dumps(data_sample, indent=2)}
+{json.dumps(data_sample, indent=2, default=str)}
 
 Task:
 Provide a deep, professional analysis of these results for the Querion "AI Summary" dashboard box.
@@ -202,7 +221,7 @@ Rows Returned: {total_rows}
 CHART_TYPE: [type]
 """
 
-    model = "google/gemini-2.0-flash-001"
+    model = "meta-llama/llama-3.3-70b-instruct"
     if "api.x.ai" in base_url:
         model = "grok-beta"
 

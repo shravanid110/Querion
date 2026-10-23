@@ -18,6 +18,20 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
         persistSession: true,
         autoRefreshToken: true,
     },
+    global: {
+        fetch: async (...args) => {
+            try {
+                return await fetch(...args);
+            } catch (err) {
+                // Return a 503 response instead of an uncaught rejected promise
+                // to gracefully prevent unhandled "TypeError: Failed to fetch"
+                return new Response(JSON.stringify({ error: "network_unavailable", message: "Network request failed" }), {
+                    status: 503,
+                    headers: { "Content-Type": "application/json" }
+                });
+            }
+        }
+    }
 });
 
 export default supabase;

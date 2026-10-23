@@ -56,23 +56,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     useEffect(() => {
         // Initial session fetch
         const checkSession = async () => {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (session?.user) {
-                await syncUserToBackend(session.user);
+            try {
+                const { data: { session }, error } = await supabase.auth.getSession();
+                if (error) {
+                    console.warn("Auth getSession notice:", error.message);
+                }
+                if (session?.user) {
+                    await syncUserToBackend(session.user);
+                }
+            } catch (err) {
+                console.warn("Auth checkSession handled:", err);
+            } finally {
+                setLoading(false);
             }
-            setLoading(false);
         };
 
         checkSession();
 
         // Listen for auth state changes
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-            if (event === 'SIGNED_IN' && session?.user) {
-                await syncUserToBackend(session.user);
-            } else if (event === 'SIGNED_OUT') {
-                setUser(null);
-                setLoading(false);
-                router.push('/login');
+            try {
+                if (event === 'SIGNED_IN' && session?.user) {
+                    await syncUserToBackend(session.user);
+                } else if (event === 'SIGNED_OUT') {
+                    setUser(null);
+                    setLoading(false);
+                    router.push('/login');
+                }
+            } catch (err) {
+                console.warn("Auth state change notice:", err);
             }
         });
 

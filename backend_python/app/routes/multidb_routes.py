@@ -149,6 +149,14 @@ async def run_multidb_query(connectionId: str = Body(...), prompt: str = Body(..
         
         schema = MultiDBFactory.get_schema_summary(db_type, credentials)
         
+        # If an alternate database was auto-detected, update the stored connection for future queries
+        if credentials.get('_detected_db') and conn.database != credentials['_detected_db']:
+            try:
+                conn.database = credentials['_detected_db']
+                db.commit()
+            except Exception:
+                db.rollback()
+
         result = await convert_nl_to_sql(schema, prompt, db_type=db_type)
         
         if not result.get("sql"):
@@ -165,9 +173,10 @@ async def run_multidb_query(connectionId: str = Body(...), prompt: str = Body(..
         rows = data["rows"]
         total_rows = len(rows)
         numeric_sum = 0
+        from decimal import Decimal
         if total_rows > 0:
             first_row = rows[0]
-            number_fields = [k for k, v in first_row.items() if isinstance(v, (int, float))]
+            number_fields = [k for k, v in first_row.items() if isinstance(v, (int, float, Decimal))]
             if number_fields:
                 field = number_fields[0]
                 numeric_sum = sum(float(row.get(field) or 0) for row in rows)
@@ -187,7 +196,7 @@ async def run_multidb_query(connectionId: str = Body(...), prompt: str = Body(..
                 if chart_match:
                     suggested_chart = chart_match.group(1).lower()
             except Exception as e:
-                print(e)
+                print(f"[Multidb Insights Error] {e}")
                 
         # Save to history
         try:
@@ -204,7 +213,8 @@ async def run_multidb_query(connectionId: str = Body(...), prompt: str = Body(..
             )
             db.add(history_record)
             db.commit()
-        except Exception:
+        except Exception as e:
+            print(f"[History Save Warning] {e}")
             db.rollback()
             
         return {
@@ -219,4 +229,6 @@ async def run_multidb_query(connectionId: str = Body(...), prompt: str = Body(..
             }
         }
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))

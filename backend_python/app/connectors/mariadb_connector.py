@@ -22,10 +22,11 @@ class MariaDBConnector(BaseConnector):
 
     def get_schema_summary(self, credentials: Dict[str, Any]) -> str:
         try:
+            target_db = credentials.get('database')
             conn = mysql.connector.connect(
                 host=credentials.get('host'),
                 port=credentials.get('port', 3306),
-                database=credentials.get('database'),
+                database=target_db,
                 user=credentials.get('username'),
                 password=credentials.get('password'),
                 ssl_disabled=False,
@@ -36,12 +37,32 @@ class MariaDBConnector(BaseConnector):
             cursor.execute("SHOW TABLES")
             tables = [t[0] for t in cursor.fetchall()]
             
+            # If current database has no tables (e.g. empty defaultdb on cloud MySQL), check other user databases
+            if not tables:
+                cursor.execute("SHOW DATABASES")
+                system_dbs = {'information_schema', 'mysql', 'performance_schema', 'sys'}
+                all_dbs = [d[0] for d in cursor.fetchall() if d[0].lower() not in system_dbs]
+                for alt_db in all_dbs:
+                    if alt_db == target_db:
+                        continue
+                    try:
+                        cursor.execute(f"USE `{alt_db}`")
+                        cursor.execute("SHOW TABLES")
+                        alt_tables = [t[0] for t in cursor.fetchall()]
+                        if alt_tables:
+                            tables = alt_tables
+                            credentials['database'] = alt_db
+                            credentials['_detected_db'] = alt_db
+                            break
+                    except Exception:
+                        continue
+
             if not tables:
                 return "The database is empty."
                 
             schema_parts = []
             for table in tables:
-                cursor.execute(f"DESCRIBE {table}")
+                cursor.execute(f"DESCRIBE `{table}`")
                 cols = cursor.fetchall()
                 col_strings = [f"{c[0]} ({c[1]})" for c in cols]
                 schema_parts.append(f"Table: {table}\nColumns: {', '.join(col_strings)}")
@@ -57,10 +78,11 @@ class MariaDBConnector(BaseConnector):
             raise Exception("Only SELECT read-only queries are allowed.")
             
         try:
+            target_db = credentials.get('_detected_db') or credentials.get('database')
             conn = mysql.connector.connect(
                 host=credentials.get('host'),
                 port=credentials.get('port', 3306),
-                database=credentials.get('database'),
+                database=target_db,
                 user=credentials.get('username'),
                 password=credentials.get('password'),
                 ssl_disabled=False,
