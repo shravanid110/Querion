@@ -450,7 +450,17 @@ function RealTimeLogFetchingTab({ projectId }: { projectId: number }) {
     const fetchGroups = useCallback(async () => {
         try {
             const res = await axios.get(`${API}/api/monitor/log-groups/${projectId}`, { timeout: 30000 });
-            setGroups(res.data);
+            const incoming: LogGroupV2[] = res.data || [];
+            setGroups(prev => {
+                const map = new Map<string, LogGroupV2>();
+                // Retain all existing groups so previous error analyses are never removed
+                prev.forEach(g => map.set(g.key, g));
+                // Add or update with incoming
+                incoming.forEach(g => map.set(g.key, g));
+                return Array.from(map.values()).sort((a, b) => 
+                    new Date(b.last_timestamp).getTime() - new Date(a.last_timestamp).getTime()
+                );
+            });
         } catch (e) {
             console.error("Failed to fetch log groups:", e);
         } finally {
@@ -477,7 +487,10 @@ function RealTimeLogFetchingTab({ projectId }: { projectId: number }) {
     const runAnalysis = async (log: string, key: string) => {
         setAnalyzing(key);
         try {
-            const res = await axios.post(`${API}/api/monitor/analyze-error-v2`, { log }, { timeout: 180000 });
+            const res = await axios.post(`${API}/api/monitor/analyze-error-v2`, { 
+                log, 
+                project_id: projectId 
+            }, { timeout: 180000 });
             setAnalysisResults(prev => ({ ...prev, [key]: res.data }));
         } catch (e: any) {
             console.error("Analysis failed", e);
@@ -485,7 +498,7 @@ function RealTimeLogFetchingTab({ projectId }: { projectId: number }) {
                 ...prev,
                 [key]: {
                     success: false,
-                    explanation: `### 🛑 AI Analysis Timeout\n\nDeepSeek took too long to respond or the backend could not be reached.\n\n**Error:** ${e.message}\n\n**Common Fixes:**\n1. Check if Ollama is running and has downloaded the model.\n2. Verify python backend is running.\n3. Wait a bit longer, local DeepSeek inference can be slow.`,
+                    explanation: `### 🛑 AI Analysis Error\n\nCould not complete error diagnosis.\n\n**Error:** ${e.message}\n\n**Action:** Check backend server status and API credits.`,
                     severity_level: "WARNING",
                     raw_ai_text: ""
                 } as any
@@ -767,8 +780,8 @@ export default function MonitoringPage() {
         return () => clearInterval(interval);
     }, [fetchProjects]);
 
-    // Store last known log count to prevent redundant fetches
-    const lastMetaRef = useRef({ count: -1, session: "" });
+    // Store last known log count and project ID to prevent redundant fetches
+    const lastMetaRef = useRef<{ projectId: number; count: number; session: string }>({ projectId: -1, count: -1, session: "" });
 
     // ── Fetch logs for selected project ────────────────────────────────────────
     const fetchProjectDetail = useCallback(async (project: Project) => {
@@ -778,8 +791,12 @@ export default function MonitoringPage() {
             const currentMeta = metaRes.data;
             const currentSession = project.session_id || "initial";
 
-            // If session is unchanged and log count is unchanged, skip full payload fetch!
-            if (lastMetaRef.current.session === currentSession && lastMetaRef.current.count === currentMeta.count) {
+            // If session is unchanged, project is same, and log count is unchanged, skip full payload fetch!
+            if (
+                lastMetaRef.current.projectId === project.id &&
+                lastMetaRef.current.session === currentSession &&
+                lastMetaRef.current.count === currentMeta.count
+            ) {
                 return;
             }
 
@@ -790,28 +807,28 @@ export default function MonitoringPage() {
                 axios.get(`${API}/api/monitor/projects/${USER_ID}`, { timeout: 20000 })
             ]);
 
-            lastMetaRef.current = { count: currentMeta.count, session: currentSession };
+            lastMetaRef.current = { projectId: project.id, count: currentMeta.count, session: currentSession };
 
             const latestProject = (projectsRes.data as Project[]).find(p => p.id === project.id);
             if (latestProject) {
-                const hasSessionChanged = project.session_id &&
-                    latestProject.session_id &&
-                    project.session_id !== latestProject.session_id;
-
-                if (hasSessionChanged) {
-                    setLogs([]);
-                } else if (latestProject.is_active) {
-                    setLogs(logsRes.data || []);
-                }
-
+                setLogs(logsRes.data || []);
                 setSelectedProject(latestProject);
             }
 
-            setFiles(filesRes.data || []);
+            const projectFiles = filesRes.data || [];
+            setFiles(projectFiles);
+
+            // Auto-select first file if none selected so code is immediately visible
+            setSelectedFile(prev => {
+                if (prev && projectFiles.some((f: any) => f.file_path === prev)) {
+                    return prev;
+                }
+                return projectFiles.length > 0 ? projectFiles[0].file_path : null;
+            });
         } catch {
             // silently ignore
         }
-    }, [selectedProject]);
+    }, []);
 
     useEffect(() => {
         if (!selectedProject) return;
@@ -820,7 +837,7 @@ export default function MonitoringPage() {
         return () => {
             if (pollRef.current) clearInterval(pollRef.current);
         };
-    }, [selectedProject, fetchProjectDetail]);
+    }, [selectedProject?.id, fetchProjectDetail]);
 
     // Fetch file content when selection changes
     useEffect(() => {
@@ -839,7 +856,7 @@ export default function MonitoringPage() {
             }
         };
         fetchContent();
-    }, [selectedProject, selectedFile]);
+    }, [selectedProject?.id, selectedFile]);
 
     // ── Auto-scroll ─────────────────────────────────────────────────────────────
     const scrollToBottom = (force = false) => {

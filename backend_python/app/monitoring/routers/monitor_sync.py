@@ -241,18 +241,24 @@ async def process_sync_background(req: SyncRequest, project_id: int, is_restart:
                     if any(x in path_str for x in ["package-lock.json", "yarn.lock", "pnpm-lock.yaml", "/node_modules/", "/.git/", "/venv/", "/.venv/", "/dist/", "/build/", "/coverage/", "/__pycache__/", "/.next/"]):
                         continue
                     
+                    norm_path = f.file_path.replace("\\", "/")
                     existing_file = db.query(ProjectFile).filter(
                         ProjectFile.project_id == project_id,
-                        ProjectFile.file_path == f.file_path
+                        or_(
+                            ProjectFile.file_path == norm_path,
+                            ProjectFile.file_path == norm_path.replace("/", "\\"),
+                            ProjectFile.file_path == f.file_path
+                        )
                     ).first()
                     if existing_file:
                         existing_file.content = f.content
                     else:
                         db.add(ProjectFile(
                             project_id=project_id,
-                            file_path=f.file_path,
+                            file_path=norm_path,
                             content=f.content
                         ))
+                db.commit()
 
             # 2. Sync Logs
             if req.logs:
@@ -431,27 +437,31 @@ async def process_sync_background(req: SyncRequest, project_id: int, is_restart:
                                 # Find multiple paths, pick the first one that isn't node_modules
                                 all_paths = _re.findall(r'([A-Za-z]:\\[^: \n]+|/[^: \n]+)(?:\.jsx?|\.tsx?|\.py|\.js|\.ts)', full_text)
                                 file_context = None
-                                
-                                target_path = None
-                                for p in all_paths:
-                                    if "node_modules" not in p and ".next" not in p:
-                                        target_path = p
-                                        break
-                                
-                                if not target_path and all_paths:
-                                    target_path = all_paths[0] # Fallback to first found
+                                with next(get_monitor_db()) as sub_db:
+                                    p_files = sub_db.query(ProjectFile).filter(ProjectFile.project_id == pid).all()
+                                    file_chunks = []
+                                    skip_exts = {'.png', '.jpg', '.jpeg', '.svg', '.ico', '.woff', '.woff2', '.ttf', '.eot', '.lock', '.map', '.mp3', '.mp4'}
+                                    
+                                    def file_priority(f_path):
+                                        lp = f_path.lower()
+                                        if any(x in lp for x in ["app.", "main.", "index.", "server.", "validation."]):
+                                            return 0
+                                        if any(lp.endswith(ext) for ext in [".jsx", ".tsx", ".js", ".ts", ".py"]):
+                                            return 1
+                                        return 2
 
-                                if target_path:
-                                    f_path = target_path
-                                    with next(get_monitor_db()) as sub_db:
-                                        # Use a clearer basename logic
-                                        basename = target_path.replace("\\", "/").split("/")[-1]
-                                        ext = target_path.split(".")[-1]
-                                        pf = sub_db.query(ProjectFile).filter(
-                                            ProjectFile.project_id == pid,
-                                            ProjectFile.file_path.ilike(f"%{basename}")
-                                        ).first()
-                                        if pf: file_context = pf.content[:4000]
+                                    sorted_files = sorted(p_files, key=lambda f: file_priority(f.file_path))
+                                    for f in sorted_files:
+                                        fname = f.file_path.replace('\\', '/')
+                                        ext = os.path.splitext(fname)[1].lower()
+                                        if ext in skip_exts:
+                                            continue
+                                        content = f.content or ""
+                                        if len(content) > 10000:
+                                            content = content[:10000] + "\n...[truncated for length]"
+                                        file_chunks.append(f"=== FILE: {fname} ===\n{content}")
+                                    if file_chunks:
+                                        file_context = "\n\n".join(file_chunks)
 
                                 from app.ai.log_analyzer import analyze_log
                                 from app.routes.ai_insights import add_insight
@@ -541,7 +551,7 @@ async def get_user_projects(user_id: str, db: Session = Depends(get_monitor_db))
     now = datetime.utcnow()
     for p, f_count, l_count in projects:
         last_act = PROJ_ACTIVITY.get(p.id)
-        is_active = (now - last_act).total_seconds() < 15 if last_act else False
+        is_active = (now - last_act).total_seconds() < 35 if last_act else False
         
         results.append({
             "id": p.id,
@@ -594,9 +604,10 @@ async def get_project_files(project_id: int, db: Session = Depends(get_monitor_d
     skip_patterns = ["node_modules", "__pycache__", ".git", ".venv", "venv", "dist", "build", "coverage", ".next"]
     filtered_files = []
     for f in files:
-        if any(x in f.file_path.replace("\\", "/") for x in [f"/{p}/" for p in skip_patterns] + [f"/{p}" for p in skip_patterns] + [f"{p}/" for p in skip_patterns]):
+        norm = f.file_path.replace("\\", "/")
+        if any(x in norm for x in [f"/{p}/" for p in skip_patterns] + [f"/{p}" for p in skip_patterns] + [f"{p}/" for p in skip_patterns]):
             continue
-        filtered_files.append({"file_path": f.file_path})
+        filtered_files.append({"file_path": norm})
         
     return filtered_files
 
@@ -605,27 +616,67 @@ async def get_project_files(project_id: int, db: Session = Depends(get_monitor_d
 async def analyze_error_v2(req: dict):
     """
     🚨 DEEPSEEK AGENTIC ANALYSIS
-    Provides a direct, high-fidelity explanation of the error.
+    Provides a direct, high-fidelity explanation of the error by inspecting all project files.
     """
     log_content = req.get("log", "")
     if not log_content:
         return JSONResponse(status_code=400, content={"error": "No log content provided"})
 
-    # Call the core LLM engine
+    project_id = req.get("project_id")
+    project_name = req.get("project_name")
+
     from app.ai.log_analyzer import analyze_log
     
-    # We'll try to find any relevant file context for this log line if possible
     file_context = None
-    # Quick regex search for paths in the log to provide better context
-    path_match = _re.search(r'([A-Za-z]:\\[^: \n]+|/[^: \n]+)\.(jsx?|tsx?|py|js|ts)', log_content)
-    if path_match:
-        target_path = path_match.group(0)
-        basename = target_path.replace("\\", "/").split("/")[-1]
-        with next(get_monitor_db()) as db:
-            pf = db.query(ProjectFile).filter(
-                ProjectFile.file_path.ilike(f"%{basename}")
-            ).first()
-            if pf: file_context = pf.content[:4000]
+    with next(get_monitor_db()) as db:
+        project = None
+        if project_id:
+            try:
+                project = db.query(UserProject).filter(UserProject.id == int(project_id)).first()
+            except Exception:
+                pass
+        if not project and project_name:
+            project = db.query(UserProject).filter(UserProject.project_name == project_name).order_by(UserProject.last_updated.desc()).first()
+        
+        # If still no project, try to find a project containing a file mentioned in the log
+        if not project:
+            path_match = _re.search(r'([A-Za-z]:\\[^: \n]+|/[^: \n]+)\.(jsx?|tsx?|py|js|ts|html|css)', log_content)
+            if path_match:
+                basename = path_match.group(0).replace("\\", "/").split("/")[-1]
+                pf = db.query(ProjectFile).filter(ProjectFile.file_path.ilike(f"%{basename}")).first()
+                if pf:
+                    project = db.query(UserProject).filter(UserProject.id == pf.project_id).first()
+        
+        # Fallback to most recently updated project
+        if not project:
+            project = db.query(UserProject).order_by(UserProject.last_updated.desc()).first()
+
+        if project:
+            p_files = db.query(ProjectFile).filter(ProjectFile.project_id == project.id).all()
+            file_chunks = []
+            skip_exts = {'.png', '.jpg', '.jpeg', '.svg', '.ico', '.woff', '.woff2', '.ttf', '.eot', '.lock', '.map', '.mp3', '.mp4'}
+            
+            def file_priority(f_path):
+                lp = f_path.lower()
+                if any(x in lp for x in ["app.", "main.", "index.", "server.", "validation."]):
+                    return 0
+                if any(lp.endswith(ext) for ext in [".jsx", ".tsx", ".js", ".ts", ".py"]):
+                    return 1
+                return 2
+
+            sorted_files = sorted(p_files, key=lambda f: file_priority(f.file_path))
+            for f in sorted_files:
+                fname = f.file_path.replace('\\', '/')
+                ext = os.path.splitext(fname)[1].lower()
+                if ext in skip_exts:
+                    continue
+                content = f.content or ""
+                if len(content) > 10000:
+                    content = content[:10000] + "\n...[truncated for length]"
+                file_chunks.append(f"=== FILE: {fname} ===\n{content}")
+                
+            if file_chunks:
+                file_context = "\n\n".join(file_chunks)
 
     result = await analyze_log(log_content, file_context=file_context)
     return result
@@ -633,14 +684,17 @@ async def analyze_error_v2(req: dict):
 @router.get("/file-content/{project_id}")
 async def get_file_content(project_id: int, path: str, db: Session = Depends(get_monitor_db)):
     """Fetch content for a specific file on demand."""
-    normalized_slash = path.replace("\\", "/")
-    normalized_backslash = path.replace("/", "\\")
+    normalized_slash = path.replace("\\", "/").lstrip("/")
+    normalized_backslash = path.replace("/", "\\").lstrip("\\")
+    basename = normalized_slash.split("/")[-1]
     f = db.query(ProjectFile).filter(
         ProjectFile.project_id == project_id,
         or_(
             ProjectFile.file_path == path,
             ProjectFile.file_path == normalized_slash,
-            ProjectFile.file_path == normalized_backslash
+            ProjectFile.file_path == normalized_backslash,
+            ProjectFile.file_path.ilike(f"%{normalized_slash}"),
+            ProjectFile.file_path.ilike(f"%{basename}")
         )
     ).first()
     if not f:
@@ -654,14 +708,8 @@ async def get_log_groups(project_id: int, limit: int = 1000, db: Session = Depen
     project = db.query(UserProject).filter(UserProject.id == project_id).first()
     query = db.query(ProjectLog).filter(ProjectLog.project_id == project_id)
     
-    start_time = PROJ_SESSION_START.get(project_id)
-    if start_time:
-        from datetime import timedelta
-        start_time = start_time - timedelta(minutes=5)
-    else:
-        from datetime import timedelta
-        start_time = datetime.utcnow() - timedelta(hours=24)
-        
+    from datetime import timedelta
+    start_time = datetime.utcnow() - timedelta(hours=24)
     query = query.filter(ProjectLog.timestamp >= start_time)
         
     logs = query.order_by(ProjectLog.timestamp.desc()).limit(limit).all()
@@ -867,10 +915,10 @@ async def chat_with_agent(req: ChatRequest, db: Session = Depends(get_monitor_db
     
     # Selected stable models on OpenRouter
     models_to_try = [
-        "google/gemini-2.0-flash-exp:free",
-        "google/gemini-flash-1.5-8b:free",
-        "mistralai/mistral-7b-instruct:free",
-        "meta-llama/llama-3.1-8b-instruct:free",
+        "openai/gpt-4o-mini",
+        "google/gemini-2.0-flash-001",
+        "meta-llama/llama-3.3-70b-instruct",
+        "deepseek/deepseek-chat",
         "openrouter/auto"
     ]
     

@@ -33,11 +33,12 @@ async def lifespan(app: FastAPI):
     preheat_model()
     
     # Start background scheduler
-    from app.routes.scheduler_routes import start_scheduler
+    from app.routes.scheduler_routes import start_scheduler, stop_scheduler
     start_scheduler()
     
     print(f"🚀 Querion API is warming up on port {settings.PORT}...")
     yield
+    stop_scheduler()
 
 app = FastAPI(title="Querion Backend", version="1.0.0", lifespan=lifespan)
 

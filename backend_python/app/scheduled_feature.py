@@ -210,9 +210,10 @@ Querion Team"""
     finally:
         db.close()
 
-scheduler = BackgroundScheduler()
-scheduler.add_job(background_job, 'interval', seconds=30)
-scheduler.start()
+if __name__ == "__main__":
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(background_job, 'interval', seconds=30)
+    scheduler.start()
 
 # 4. Secure Execution Verification API
 @app.post("/api/execute-verify")

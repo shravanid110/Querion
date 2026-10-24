@@ -231,8 +231,37 @@ Querion Analytics Team"""
     finally:
         db.close()
 
+import atexit
+
+_scheduler = None
+
 def start_scheduler():
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(background_job, 'interval', seconds=30)
-    scheduler.start()
-    print("⏰ Background Scheduler service started (Check every 30s)")
+    global _scheduler
+    if _scheduler is not None:
+        try:
+            if _scheduler.running:
+                return
+        except Exception:
+            pass
+    _scheduler = BackgroundScheduler()
+    _scheduler.add_job(background_job, 'interval', seconds=30, id='background_job', replace_existing=True)
+    try:
+        _scheduler.start()
+        print("⏰ Background Scheduler service started (Check every 30s)")
+    except Exception as e:
+        print(f"⚠️ Failed to start scheduler: {e}")
+
+def stop_scheduler():
+    global _scheduler
+    if _scheduler is not None:
+        try:
+            if _scheduler.running:
+                _scheduler.shutdown(wait=False)
+                print("⏰ Background Scheduler service stopped")
+        except Exception:
+            pass
+        finally:
+            _scheduler = None
+
+atexit.register(stop_scheduler)
+

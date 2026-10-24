@@ -12,16 +12,17 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 load_dotenv()
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY") or settings.OPENROUTER_API_KEY or "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"
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY") or settings.OPENROUTER_API_KEY or ""
 
 async def run_openrouter_engine(prompt: str) -> str:
-    """Primary Cloud AI engine via OpenRouter (with automatic free fallback)."""
+    """Primary Cloud AI engine via OpenRouter (using high-performance models)."""
+    api_key = os.getenv("OPENROUTER_API_KEY") or settings.OPENROUTER_API_KEY or OPENROUTER_API_KEY
     models = [
-        "nvidia/nemotron-3.5-lightning:free",
-        "cohere/north-mini-code:free",
-        "liquid/lfm-2.5-2.6b:free",
-        "google/gemma-4-26b-a4b-it:free",
-        "openai/gpt-4o-mini"
+        "openai/gpt-4o-mini",
+        "google/gemini-2.0-flash-001",
+        "meta-llama/llama-3.3-70b-instruct",
+        "deepseek/deepseek-chat",
+        "openrouter/auto"
     ]
     for model_name in models:
         try:
@@ -30,15 +31,22 @@ async def run_openrouter_engine(prompt: str) -> str:
                     "https://openrouter.ai/api/v1/chat/completions",
                     json={
                         "model": model_name,
-                        "messages": [{"role": "user", "content": prompt}],
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": "You are a senior site reliability engineer and backend debugging expert. Your job is to analyze server and application error logs, diagnose root cause, identify the exact file and line number where the issue is, and provide clear step-by-step fix instructions with the exact code snippet."
+                            },
+                            {"role": "user", "content": prompt}
+                        ],
                         "temperature": 0.2
                     },
                     headers={
-                        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                        "Authorization": f"Bearer {api_key}",
                         "Content-Type": "application/json",
+                        "HTTP-Referer": "https://querion.ai",
                         "X-Title": "Querion Observability"
                     },
-                    timeout=30.0
+                    timeout=35.0
                 )
                 if resp.status_code == 200:
                     data = resp.json()
@@ -46,7 +54,7 @@ async def run_openrouter_engine(prompt: str) -> str:
                     if content:
                         return content
                 else:
-                    logger.warning(f"OpenRouter ({model_name}) status: {resp.status_code}")
+                    logger.warning(f"OpenRouter ({model_name}) status: {resp.status_code} - {resp.text[:100]}")
         except Exception as e:
             logger.warning(f"OpenRouter connection for {model_name} failed: {e}")
     return ""
@@ -112,46 +120,34 @@ async def run_grok_fallback(prompt: str) -> str:
 
 def _parse_llm_json(result_text: Optional[str]) -> Optional[Dict[str, Any]]:
     if not result_text: return None
-    if "LOG ANALYSIS REPORT" in result_text:
-        # User requested a strict raw text format. Let's parse it manually for the UI.
-        report_data = {
-            "explanation": result_text, # The UI can just show the whole block
-            "full_report": True,
-            "severity_level": "HIGH" if "ERROR:" in result_text else "MEDIUM",
-            "system_status": "RISK"
-        }
-        
-        # Try to extract keys for the "Where" and "How" sections of the UI
-        err_match = re.search(r"ERROR:\n(.*?)(?=\n\n|\nLOCATION:|$)", result_text, re.DOTALL)
-        loc_match = re.search(r"LOCATION:\n(.*?)(?=\n\n|\nROOT CAUSE:|$)", result_text, re.DOTALL)
-        fix_match = re.search(r"FIX:\n(.*?)(?=\n\n|\nVALIDATION:|$)", result_text, re.DOTALL)
-        
-        if err_match: report_data["error_type"] = err_match.group(1).strip()
-        if loc_match: report_data["affected_file"] = loc_match.group(1).strip()
-        if fix_match: report_data["suggested_fix"] = fix_match.group(1).strip()
-        
-        return report_data
+    report_data = {
+        "explanation": result_text,
+        "full_report": True,
+        "severity_level": "HIGH" if any(x in result_text.lower() for x in ["error", "exception", "failed", "critical"]) else "MEDIUM",
+        "system_status": "RISK"
+    }
 
-    # Try standard JSON parsing
-    data_str = None
+    # Try extracting structured fields from the markdown
+    err_match = re.search(r"(?:### 1\. Error Summary|ERROR:?)\s*\n(.*?)(?=\n###|\n\n[A-Z]|$)", result_text, re.DOTALL | re.IGNORECASE)
+    loc_match = re.search(r"(?:### 2\. Location|LOCATION:?)\s*\n(.*?)(?=\n###|\n\n[A-Z]|$)", result_text, re.DOTALL | re.IGNORECASE)
+    fix_match = re.search(r"(?:### 4\. Step-by-Step Fix|FIX:?)\s*\n(.*?)(?=\n###|\n\n[A-Z]|$)", result_text, re.DOTALL | re.IGNORECASE)
+    code_match = re.search(r"```(?:\w+)?\n(.*?)```", result_text, re.DOTALL)
+
+    if err_match: report_data["error_type"] = err_match.group(1).strip()
+    if loc_match: report_data["affected_file"] = loc_match.group(1).strip()
+    if fix_match: report_data["suggested_fix"] = fix_match.group(1).strip()
+    if code_match: report_data["generated_fix_code"] = code_match.group(1).strip()
+
+    # Fallback to check if response contains raw json
     json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', result_text, re.DOTALL)
     if json_match:
-        data_str = json_match.group(1).strip()
-    else:
-        # Fallback: extract anything between the first { and last }
-        text_match = re.search(r'(\{.*\})', result_text, re.DOTALL)
-        if text_match:
-            data_str = text_match.group(1).strip()
-        else:
-            return None
-    
-    if data_str:
         try:
-            return json.loads(data_str)
-        except Exception as e:
-            logger.error(f"JSON Parse Error: {e}")
-            return None
-    return None
+            parsed = json.loads(json_match.group(1).strip())
+            report_data.update(parsed)
+        except Exception:
+            pass
+
+    return report_data
 
 def _clean_log_text(log_text: str) -> str:
     """Pre-process and sanitize log content for better AI analysis."""
@@ -171,7 +167,7 @@ def _clean_log_text(log_text: str) -> str:
 
 async def analyze_log(log_text: str, file_context: Optional[str] = None) -> Dict[str, Any]:
     """
-    Querion Senior SRE Agent (Ollama First Edition).
+    Querion Senior SRE Agent.
     Performs deep diagnosis and generates line-by-line fixes.
     """
     print(f"DEBUG: analyze_log called at {datetime.now()}")
@@ -185,26 +181,38 @@ async def analyze_log(log_text: str, file_context: Optional[str] = None) -> Dict
             "explanation": "No logs to analyze or log was entirely sanitized (e.g. only timestamps/addresses).",
             "raw_ai_text": ""
         }
-    master_prompt = f"""You are a backend monitoring expert. You will be provided with grouped log entries from a server or application. Your task is to:
+    master_prompt = f"""You are a senior site reliability engineer and full-stack software debugging expert.
+A project encountered the following error during execution:
 
-1. Analyze each grouped log carefully.
-2. Identify all errors, warnings, or failures.
-3. For each error, provide a detailed explanation including:
-   - Error Message: Exact error from the log
-   - Explanation: What this error means in simple technical terms
-   - Location/Context: Where in the code, process, or system the error is happening
-   - Cause: Likely reason(s) for this error
-   - Fix Steps: Step-by-step instructions to resolve it
-4. Do not remove, truncate, or change any log lines.
-5. If multiple errors exist in the grouped log, repeat the structure for each one.
-6. If no errors are detected, explicitly say: "No critical errors found in this log."
-7. ALWAYS start your response with "LOG ANALYSIS REPORT".
-
-Logs to analyze:
+ERROR LOG / TRACEBACK:
 {log_text}
 
-Project Context:
-{file_context or "No source code context available."}
+PROJECT SOURCE FILES (Inspect ALL files carefully):
+{file_context or "No project files available."}
+
+INSTRUCTIONS:
+1. Carefully review ALL provided project files above. Correlate the error log trace with the actual source code across the files.
+2. Pinpoint the exact file name and line number responsible for the failure.
+3. Explain why the failure occurred in simple, precise technical terms.
+4. Provide step-by-step instructions to fix the issue.
+5. Provide the exact corrected code block so the developer can replace the broken code directly.
+
+Format your response in clean Markdown with these exact headings:
+
+### 1. Error Summary
+State the exact error and what broke.
+
+### 2. Location
+State the exact file path (e.g. `src/App.jsx`, `script.js`, or `main.py`) and line number where the problem is located.
+
+### 3. Root Cause Analysis
+Explain clearly why this error occurred based on your inspection of the project files.
+
+### 4. Step-by-Step Fix
+Provide clear, numbered instructions on how to fix this issue in the code.
+
+### 5. Corrected Code
+Provide the complete corrected code snippet for the affected file/function.
 """
 
     logger.info(f"🚀 Initializing AI Analysis Engine...")

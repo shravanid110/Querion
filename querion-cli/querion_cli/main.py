@@ -80,9 +80,9 @@ def solve_error_with_ai(error_block: str, server_url: str, project_name: str):
         try:
             resp = requests.post(
                 f"{server_url}/api/monitor/analyze-error-v2",
-                json={"log": error_block},
+                json={"log": error_block, "project_name": project_name},
                 headers={"Content-Type": "application/json"},
-                timeout=45
+                timeout=60
             )
             if resp.status_code == 200:
                 data = resp.json()
@@ -97,18 +97,18 @@ def solve_error_with_ai(error_block: str, server_url: str, project_name: str):
                 print(Fore.YELLOW + f"  Issue Type : {Style.BRIGHT}{error_type}")
                 print(Fore.YELLOW + f"  Location   : {Style.BRIGHT}{affected_file}")
                 print(Fore.CYAN   + "\n  [AI Solution Explanation]:")
-                for line in explanation.splitlines()[:15]:
+                for line in explanation.splitlines():
                     print(Fore.WHITE + f"    {line}")
 
                 if fix_code and fix_code != explanation:
                     print(Fore.GREEN + "\n  [Recommended Fix Code]:")
-                    for line in str(fix_code).splitlines()[:20]:
+                    for line in str(fix_code).splitlines():
                         print(Fore.GREEN + f"    {line}")
 
                 print(Style.BRIGHT + Fore.RED + "  " + "="*70)
                 print(Fore.CYAN + "  ✓ Live AI report synced to http://localhost:3000/monitoring\n")
-        except Exception:
-            pass
+        except Exception as e:
+            print(Fore.RED + f"  [AI Solver Error]: {e}")
 
 
 # ─── File Watcher ─────────────────────────────────────────────────────────────
@@ -149,8 +149,8 @@ class SyncHandler(FileSystemEventHandler):
             ext = os.path.splitext(path)[1].lower()
             rel_path = os.path.relpath(path, self.watch_dir).replace('\\', '/')
 
-            # 1. JavaScript / TypeScript syntax check
-            if ext in ['.js', '.jsx', '.ts', '.tsx']:
+            # 1. Plain JavaScript syntax check (skip JSX/TSX since node -c doesn't support JSX without transpiler)
+            if ext == '.js':
                 res = subprocess.run(["node", "-c", path], capture_output=True, text=True, timeout=5)
                 if res.returncode != 0:
                     err_lines = strip_ansi(res.stderr or res.stdout).strip().splitlines()
